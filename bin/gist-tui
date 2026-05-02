@@ -23,6 +23,15 @@ DEFAULT_DATA = {"version": 1, "nodes": []}
 ROOT_KEY = "__root__"
 BADGES = {"goal": "G", "idea": "I", "step": "S", "task": "T", "free": "·"}
 CHILD_TYPE = {"goal": "idea", "idea": "step", "step": "task", "task": "free", "free": "free"}
+TYPE_ORDER = ["goal", "idea", "step", "task", "free"]
+TYPE_LABELS = {
+    "goal": "Goals",
+    "idea": "Ideas",
+    "step": "Steps",
+    "task": "Tasks",
+    "free": "Free",
+}
+SORT_OPTIONS = ["manual", "title", "created", "status", "completed"]
 
 
 def load() -> dict:
@@ -103,6 +112,8 @@ class GistBrowser(App):
         Binding("enter", "edit_current", "edit", show=False),
         Binding("d", "d_key", "done (dd)", show=False),
         Binding("D", "archive", "archive", show=False),
+        Binding("f", "toggle_level_scope", "all-level", show=True),
+        Binding("s", "cycle_sort", "sort", show=True),
         Binding("v", "toggle_view", "view", show=True),
         Binding("z", "toggle_archived", "archives", show=True),
         Binding("u", "undo", "undo", show=True),
@@ -122,7 +133,9 @@ class GistBrowser(App):
         self.cursor_memory: dict[str, str] = {}
         self.active_depth = 0
         self.open_depth = 0
-        self.columns_state: list[tuple[str | None, list[dict]]] = []
+        self.columns_state: list[dict] = []
+        self.column_scope: dict[int, str] = {}
+        self.column_sort: dict[int, str] = {}
 
         self.expanded_ids: set[str] = set()
         self.tree_cursor_id: str | None = None
@@ -152,23 +165,71 @@ class GistBrowser(App):
     def _parent_key(self, parent_id: str | None) -> str:
         return parent_id or ROOT_KEY
 
+    def _all_scope_key(self, node_type: str) -> str:
+        return f"all:{node_type}"
+
+    def _column_type_for_depth(self, depth: int) -> str:
+        return TYPE_ORDER[min(depth, len(TYPE_ORDER) - 1)]
+
+    def _column_scope_for_depth(self, depth: int) -> str:
+        return self.column_scope.get(depth, "branch")
+
+    def _column_sort_for_depth(self, depth: int) -> str:
+        return self.column_sort.get(depth, "manual")
+
     def _column_nodes(self, parent_id: str | None) -> list[dict]:
         return [n for n in self._visible_nodes() if n.get("parentId") == parent_id]
+
+    def _sorted_nodes(self, nodes: list[dict], depth: int) -> list[dict]:
+        sort_key = self._column_sort_for_depth(depth)
+        if sort_key == "title":
+            return sorted(nodes, key=lambda n: n["title"].lower())
+        if sort_key == "created":
+            return sorted(nodes, key=lambda n: n.get("createdAt") or "", reverse=True)
+        if sort_key == "status":
+            status_rank = {"active": 0, "completed": 1, "archived": 2}
+            return sorted(nodes, key=lambda n: (status_rank.get(n["status"], 9), n["title"].lower()))
+        if sort_key == "completed":
+            return sorted(nodes, key=lambda n: n.get("completedAt") or "", reverse=True)
+        return nodes
+
+    def _column_state_for_depth(self, parent_id: str | None, depth: int) -> dict:
+        node_type = self._column_type_for_depth(depth)
+        scope = self._column_scope_for_depth(depth)
+        if scope == "all":
+            nodes = [n for n in self._visible_nodes() if n["type"] == node_type]
+            selection_key = self._all_scope_key(node_type)
+            title = f"All {TYPE_LABELS[node_type]}"
+        else:
+            nodes = self._column_nodes(parent_id)
+            selection_key = self._parent_key(parent_id)
+            title = TYPE_LABELS[node_type]
+        return {
+            "depth": depth,
+            "parent_id": parent_id,
+            "nodes": self._sorted_nodes(nodes, depth),
+            "selection_key": selection_key,
+            "scope": scope,
+            "node_type": node_type,
+            "title": title,
+        }
 
     def _siblings(self, gid: str) -> list[dict]:
         node = self._gist_node(gid)
         return self._column_nodes(node.get("parentId")) if node else []
 
     def _selected_id_for_parent(self, parent_id: str | None, nodes: list[dict]) -> str | None:
+        return self._selected_id_for_key(self._parent_key(parent_id), nodes)
+
+    def _selected_id_for_key(self, selection_key: str, nodes: list[dict]) -> str | None:
         if not nodes:
             return None
-        key = self._parent_key(parent_id)
-        current = self.cursor_memory.get(key)
+        current = self.cursor_memory.get(selection_key)
         valid_ids = {n["id"] for n in nodes}
         if current in valid_ids:
             return current
         selected = nodes[0]["id"]
-        self.cursor_memory[key] = selected
+        self.cursor_memory[selection_key] = selected
         return selected
 
     def _has_visible_children(self, gid: str | None) -> bool:
@@ -188,8 +249,9 @@ class GistBrowser(App):
             return
         path = self._path_to_node(gid)
         parent_id = None
-        for current_id in path:
+        for depth, current_id in enumerate(path):
             self.cursor_memory[self._parent_key(parent_id)] = current_id
+            self.cursor_memory[self._all_scope_key(self._column_type_for_depth(depth))] = current_id
             parent_id = current_id
         self.tree_cursor_id = gid
         self.expanded_ids.update(path[:-1])
@@ -197,13 +259,19 @@ class GistBrowser(App):
         self.open_depth = self.active_depth
 
     def _current_column_parent(self) -> str | None:
-        return self.columns_state[self.active_depth][0] if self.columns_state else None
+        return self.columns_state[self.active_depth]["parent_id"] if self.columns_state else None
 
     def _current_column_nodes(self) -> list[dict]:
-        return self.columns_state[self.active_depth][1] if self.columns_state else []
+        return self.columns_state[self.active_depth]["nodes"] if self.columns_state else []
+
+    def _current_column_state(self) -> dict | None:
+        return self.columns_state[self.active_depth] if self.columns_state else None
 
     def _current_columns_gid(self) -> str | None:
-        return self._selected_id_for_parent(self._current_column_parent(), self._current_column_nodes())
+        column = self._current_column_state()
+        if not column:
+            return None
+        return self._selected_id_for_key(column["selection_key"], column["nodes"])
 
     def _visible_tree_rows(self) -> list[tuple[dict, int]]:
         rows: list[tuple[dict, int]] = []
@@ -229,18 +297,18 @@ class GistBrowser(App):
         return self._current_tree_gid() if self.view_mode == "tree" else self._current_columns_gid()
 
     def _build_columns_state(self):
-        columns: list[tuple[str | None, list[dict]]] = []
+        columns: list[dict] = []
         parent_id: str | None = None
         depth = 0
         while depth <= self.open_depth:
-            nodes = self._column_nodes(parent_id)
-            columns.append((parent_id, nodes))
-            selected = self._selected_id_for_parent(parent_id, nodes)
+            column = self._column_state_for_depth(parent_id, depth)
+            columns.append(column)
+            selected = self._selected_id_for_key(column["selection_key"], column["nodes"])
             if selected is None or depth == self.open_depth or not self._has_visible_children(selected):
                 break
             parent_id = selected
             depth += 1
-        self.columns_state = columns or [(None, [])]
+        self.columns_state = columns or [self._column_state_for_depth(None, 0)]
         self.open_depth = min(self.open_depth, len(self.columns_state) - 1)
         self.active_depth = min(self.active_depth, len(self.columns_state) - 1)
 
@@ -256,17 +324,15 @@ class GistBrowser(App):
 
     def _normalize_columns_state(self):
         if not self.columns_state:
-            self.columns_state = [(None, [])]
+            self.columns_state = [self._column_state_for_depth(None, 0)]
         self.open_depth = min(self.open_depth, len(self.columns_state) - 1)
         self.active_depth = min(self.active_depth, len(self.columns_state) - 1)
-
         if self.active_depth < 0:
             self.active_depth = 0
         if self.open_depth < 0:
             self.open_depth = 0
-
-        for parent_id, nodes in self.columns_state:
-            self._selected_id_for_parent(parent_id, nodes)
+        for column in self.columns_state:
+            self._selected_id_for_key(column["selection_key"], column["nodes"])
 
     def _refresh_view(self):
         self._build_columns_state()
@@ -280,6 +346,9 @@ class GistBrowser(App):
     def _remember_selection(self, parent_id: str | None, gid: str):
         self.cursor_memory[self._parent_key(parent_id)] = gid
 
+    def _remember_selection_for_column(self, column: dict, gid: str):
+        self.cursor_memory[column["selection_key"]] = gid
+
     def _push_undo(self):
         self._undo_stack.append(
             {
@@ -289,6 +358,8 @@ class GistBrowser(App):
                 "cursor_memory": copy.deepcopy(self.cursor_memory),
                 "active_depth": self.active_depth,
                 "open_depth": self.open_depth,
+                "column_scope": copy.deepcopy(self.column_scope),
+                "column_sort": copy.deepcopy(self.column_sort),
                 "expanded_ids": copy.deepcopy(self.expanded_ids),
                 "tree_cursor_id": self.tree_cursor_id,
             }
@@ -341,18 +412,26 @@ class GistBrowser(App):
             "open_state": open_state,
         }
 
+    def _max_visible_columns(self) -> int:
+        return max(1, min(4, max(1, self.size.width // 24)))
+
     def _render_columns_browser(self):
+        max_cols = self._max_visible_columns()
+        end = self.active_depth + 1
+        start = max(0, end - max_cols)
+        visible_columns = self.columns_state[start:end]
+
         panels = []
-        for depth, (parent_id, nodes) in enumerate(self.columns_state):
-            title = "root" if depth == 0 else (self._gist_node(parent_id) or {}).get("title", "root")
+        for column in visible_columns:
+            depth = column["depth"]
+            nodes = column["nodes"]
             text = Text()
             if not nodes:
                 text.append("Nothing here.", style="dim")
             else:
-                selected_id = self._selected_id_for_parent(parent_id, nodes)
+                selected_id = self._selected_id_for_key(column["selection_key"], nodes)
                 for i, node in enumerate(nodes):
                     line = Text()
-                    line.append(f"{badge_for(node['type'])}  ")
                     label = node["title"] + (" ✓" if node["status"] == "completed" else "")
                     line.append(label)
                     if node["status"] in ("completed", "archived"):
@@ -362,16 +441,23 @@ class GistBrowser(App):
                     text.append(line)
                     if i < len(nodes) - 1:
                         text.append("\n")
-            panels.append(Panel(text, title=title, border_style="yellow" if depth == self.active_depth else "grey35", expand=True))
+            panels.append(
+                Panel(
+                    text,
+                    title=column["title"],
+                    border_style="yellow" if depth == self.active_depth else "grey35",
+                    expand=True,
+                )
+            )
 
         grid = Table.grid(expand=True)
-        for _ in panels:
-            grid.add_column(ratio=1)
         if panels:
+            for _ in panels:
+                grid.add_column(ratio=1)
             grid.add_row(*panels)
         else:
             grid.add_column(ratio=1)
-            grid.add_row(Panel(Text("Nothing here.", style="dim"), title="root", border_style="grey35", expand=True))
+            grid.add_row(Panel(Text("Nothing here.", style="dim"), title=TYPE_LABELS["goal"], border_style="grey35", expand=True))
         return grid
 
     def _render_tree_browser(self) -> Panel:
@@ -409,6 +495,9 @@ class GistBrowser(App):
         if node:
             parent = self._gist_node(node.get("parentId")) if node.get("parentId") else None
             child_type = CHILD_TYPE.get(node["type"], "free")
+            column = self._current_column_state() if self.view_mode == "columns" else None
+            scope = column["scope"] if column else "branch"
+            sort_mode = self._column_sort_for_depth(self.active_depth)
             lines = [
                 f"[b]{badge_for(node['type'])}[/b] {node['title']}  [dim]({status_label(node['status'])})[/dim]  view: {self.view_mode}",
                 f"parent: {parent['title'] if parent else 'root'}",
@@ -418,7 +507,8 @@ class GistBrowser(App):
                 f"{'↓' if actions['can_move_down'] else '·'}   "
                 f"indent: {'yes' if actions['can_indent'] else 'no'}   "
                 f"unindent: {'yes' if actions['can_unindent'] else 'no'}",
-                f"children: {'yes' if actions['has_children'] else 'no'}   open: {actions['open_state']}   archives: {'shown' if self.show_archived else 'hidden'}   status: {self._status_message}",
+                f"children: {'yes' if actions['has_children'] else 'no'}   open: {actions['open_state']}   scope: {scope}   sort: {sort_mode}",
+                f"archives: {'shown' if self.show_archived else 'hidden'}   width-cols: {self._max_visible_columns()}   status: {self._status_message}",
             ]
         else:
             lines = [
@@ -426,24 +516,28 @@ class GistBrowser(App):
                 "parent: root",
                 "a -> G child   A -> G sibling   enter -> edit   v -> switch view",
                 "move: · ·   indent: no   unindent: no",
-                f"children: no   open: closed   archives: {'shown' if self.show_archived else 'hidden'}   status: {self._status_message}",
+                f"children: no   open: closed   scope: branch   sort: {self._column_sort_for_depth(self.active_depth)}",
+                f"archives: {'shown' if self.show_archived else 'hidden'}   width-cols: {self._max_visible_columns()}   status: {self._status_message}",
             ]
         widget.update("\n".join(lines))
 
     def _move_columns_selection(self, delta: int):
-        parent_id = self._current_column_parent()
-        nodes = self._current_column_nodes()
+        column = self._current_column_state()
+        if not column:
+            self._set_status("No active column.")
+            return
+        nodes = column["nodes"]
         if not nodes:
             self._set_status("Nothing to select here.")
             return
-        gid = self._selected_id_for_parent(parent_id, nodes)
+        gid = self._selected_id_for_key(column["selection_key"], nodes)
         idx = next((i for i, n in enumerate(nodes) if n["id"] == gid), 0)
         new_idx = max(0, min(len(nodes) - 1, idx + delta))
         if new_idx == idx:
             self._set_status(f"Already at the {'bottom' if delta > 0 else 'top'} of this column.")
             return
         new_gid = nodes[new_idx]["id"]
-        self._remember_selection(parent_id, new_gid)
+        self._remember_selection_for_column(column, new_gid)
         if self.active_depth < self.open_depth:
             self.open_depth = self.active_depth + 1 if self._has_visible_children(new_gid) else self.active_depth
         self._refresh_view()
@@ -527,7 +621,8 @@ class GistBrowser(App):
             self.active_depth = self.open_depth
             child_nodes = self._column_nodes(gid)
             if child_nodes:
-                self._selected_id_for_parent(gid, child_nodes)
+                child_column = self.columns_state[self.active_depth] if self.active_depth < len(self.columns_state) else self._column_state_for_depth(gid, self.active_depth)
+                self._remember_selection_for_column(child_column, child_nodes[0]["id"])
             self._refresh_view()
             self._set_status("Opened child column.")
             return
@@ -553,9 +648,10 @@ class GistBrowser(App):
                     self._refresh_view()
                     self._set_status("Moved to top of tree.")
             else:
+                column = self._current_column_state()
                 nodes = self._current_column_nodes()
-                if nodes:
-                    self._remember_selection(self._current_column_parent(), nodes[0]["id"])
+                if column and nodes:
+                    self._remember_selection_for_column(column, nodes[0]["id"])
                     if self.active_depth < self.open_depth:
                         self.open_depth = self.active_depth + 1 if self._has_visible_children(nodes[0]["id"]) else self.active_depth
                     self._refresh_view()
@@ -573,11 +669,12 @@ class GistBrowser(App):
             self._refresh_view()
             self._set_status("Moved to bottom of tree.")
             return
+        column = self._current_column_state()
         nodes = self._current_column_nodes()
-        if not nodes:
+        if not column or not nodes:
             self._set_status("Nothing in this column.")
             return
-        self._remember_selection(self._current_column_parent(), nodes[-1]["id"])
+        self._remember_selection_for_column(column, nodes[-1]["id"])
         if self.active_depth < self.open_depth:
             self.open_depth = self.active_depth + 1 if self._has_visible_children(nodes[-1]["id"]) else self.active_depth
         self._refresh_view()
@@ -637,8 +734,7 @@ class GistBrowser(App):
             return
         self._push_undo()
         node = self._gist_node(gid)
-        new_parent_id = sibs[idx - 1]["id"]
-        node["parentId"] = new_parent_id
+        node["parentId"] = sibs[idx - 1]["id"]
         save(self.data)
         self._sync_selection_to_gid(gid)
         self._refresh_view()
@@ -779,6 +875,33 @@ class GistBrowser(App):
         self._refresh_view()
         self._set_status(f"Archived {title}.")
 
+    def action_toggle_level_scope(self):
+        if self.view_mode != "columns":
+            self._set_status("All-level view is only for columns mode.")
+            return
+        gid = self._current_gist_id()
+        current = self._column_scope_for_depth(self.active_depth)
+        self.column_scope[self.active_depth] = "all" if current == "branch" else "branch"
+        if gid:
+            if self.column_scope[self.active_depth] == "all":
+                self.cursor_memory[self._all_scope_key(self._column_type_for_depth(self.active_depth))] = gid
+            else:
+                self._sync_selection_to_gid(gid)
+        self._refresh_view()
+        label = "all-level" if self.column_scope[self.active_depth] == "all" else "branch"
+        self._set_status(f"Switched current column to {label} scope.")
+
+    def action_cycle_sort(self):
+        if self.view_mode != "columns":
+            self._set_status("Sorting is only for columns mode.")
+            return
+        current = self._column_sort_for_depth(self.active_depth)
+        idx = SORT_OPTIONS.index(current)
+        new_value = SORT_OPTIONS[(idx + 1) % len(SORT_OPTIONS)]
+        self.column_sort[self.active_depth] = new_value
+        self._refresh_view()
+        self._set_status(f"Sorting current column by {new_value}.")
+
     def action_toggle_view(self):
         gid = self._current_gist_id()
         self.view_mode = "columns" if self.view_mode == "tree" else "tree"
@@ -803,6 +926,8 @@ class GistBrowser(App):
         self.cursor_memory = state["cursor_memory"]
         self.active_depth = state["active_depth"]
         self.open_depth = state["open_depth"]
+        self.column_scope = state["column_scope"]
+        self.column_sort = state["column_sort"]
         self.expanded_ids = state["expanded_ids"]
         self.tree_cursor_id = state["tree_cursor_id"]
         save(self.data)
