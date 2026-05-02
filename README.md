@@ -12,7 +12,7 @@ Run:
 ./bin/init.sh
 ```
 
-That creates your local data files from the committed examples. Your actual data stays untracked.
+That creates your local data files from the committed examples and links the repo-owned GIST skills into `~/.codex/skills` and `~/.claude/skills`. Your actual data stays untracked.
 
 ## Use it
 
