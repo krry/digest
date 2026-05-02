@@ -1,0 +1,5 @@
+.serena/
+goals.json
+values.json
+checkins.json
+bin/__pycache__/

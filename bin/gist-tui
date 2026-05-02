@@ -1,0 +1,353 @@
+#!/usr/bin/env python3
+"""GIST TUI — Yazi-style keyboard nav for goals/ideas/steps/tasks."""
+
+import datetime
+import json
+import pathlib
+import secrets
+from textual.app import App, ComposeResult
+from textual.widgets import Tree, Footer, Input, Label
+from textual.widgets.tree import TreeNode
+from textual.binding import Binding
+from textual.screen import ModalScreen
+from textual import events
+from textual.containers import Vertical
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+DATA = ROOT / "goals.json"
+VALUES = ROOT / "values.json"
+DEFAULT_DATA = {"version": 1, "nodes": []}
+BADGES = {"goal": "G", "idea": "I", "step": "S", "task": "T", "free": "·"}
+CHILD_TYPE = {"goal": "idea", "idea": "step", "step": "task", "task": "free", "free": "free"}
+
+def load() -> dict:
+    if DATA.exists():
+        return json.loads(DATA.read_text())
+    save(DEFAULT_DATA)
+    return dict(DEFAULT_DATA)
+
+def save(data: dict):
+    DATA.parent.mkdir(parents=True, exist_ok=True)
+    DATA.write_text(json.dumps(data, indent=2))
+
+def new_id() -> str:
+    return secrets.token_hex(3)
+
+def now() -> str:
+    return datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")
+
+def node_label(n: dict) -> str:
+    badge = BADGES.get(n["type"], "·")
+    suffix = " ✓" if n["status"] == "completed" else ""
+    dim = "[dim]" if n["status"] in ("completed", "archived") else ""
+    return f"{dim}{badge}  {n['title']}{suffix}{'[/dim]' if dim else ''}"
+
+
+class InputModal(ModalScreen):
+    """Floating input for rename / add."""
+    BINDINGS = [Binding("escape", "dismiss('')", "cancel")]
+
+    def __init__(self, prompt: str, default: str = ""):
+        super().__init__()
+        self._prompt = prompt
+        self._default = default
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-box"):
+            yield Label(self._prompt)
+            yield Input(value=self._default, id="modal-input")
+
+    def on_mount(self):
+        self.query_one(Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted):
+        self.dismiss(event.value.strip())
+
+
+class GistTree(App):
+    CSS_PATH = ROOT / "gist-tui.tcss"
+
+    BINDINGS = [
+        Binding("j",       "cursor_down",   "down",         show=False),
+        Binding("k",       "cursor_up",     "up",           show=False),
+        Binding("h",       "h_key",         "collapse/up",  show=False),
+        Binding("l",       "l_key",         "expand/child", show=False),
+        Binding("g",       "gg_start",      "gg…",          show=False),
+        Binding("G",       "go_bottom",     "bottom",       show=False),
+        Binding("J",       "move_down",     "move↓",        show=False),
+        Binding("K",       "move_up",       "move↑",        show=False),
+        Binding("tab",     "indent",        "indent",       show=False),
+        Binding("shift+tab", "unindent",    "unindent",     show=False),
+        Binding("a",       "add_child",     "add child",    show=True),
+        Binding("A",       "add_sibling",   "add sibling",  show=True),
+        Binding("r",       "rename",        "rename",       show=True),
+        Binding("d",       "d_key",         "done (dd)",    show=False),
+        Binding("D",       "archive",       "archive",      show=False),
+        Binding("u",       "undo",          "undo",         show=True),
+        Binding("q",       "quit",          "quit",         show=True),
+    ]
+
+    def __init__(self):
+        super().__init__()
+        self.data = load()
+        self._gg_pending = False
+        self._d_pending = False
+        self._undo_stack: list[dict] = []
+        self._node_map: dict[str, TreeNode] = {}  # gist id → tree node
+
+    def compose(self) -> ComposeResult:
+        yield Tree("GIST", id="tree")
+        yield Footer()
+
+    def on_mount(self):
+        self._rebuild()
+
+    def _rebuild(self, focus_id: str | None = None):
+        tree = self.query_one(Tree)
+        tree.clear()
+        self._node_map = {}
+        nodes_by_id = {n["id"]: n for n in self.data["nodes"]}
+
+        def add_children(parent_tree_node, parent_gist_id):
+            children = [n for n in self.data["nodes"]
+                        if n.get("parentId") == parent_gist_id
+                        and n["status"] != "archived"]
+            for n in children:
+                tn = parent_tree_node.add(node_label(n), data=n["id"], expand=True)
+                self._node_map[n["id"]] = tn
+                add_children(tn, n["id"])
+
+        roots = [n for n in self.data["nodes"]
+                 if n.get("parentId") is None and n["status"] != "archived"]
+        for n in roots:
+            tn = tree.root.add(node_label(n), data=n["id"], expand=True)
+            self._node_map[n["id"]] = tn
+            add_children(tn, n["id"])
+
+        tree.root.expand()
+        if focus_id and focus_id in self._node_map:
+            tree.move_cursor(self._node_map[focus_id])
+
+    def _current_gist_id(self) -> str | None:
+        tree = self.query_one(Tree)
+        node = tree.cursor_node
+        return node.data if node and node.data else None
+
+    def _gist_node(self, gid: str) -> dict | None:
+        return next((n for n in self.data["nodes"] if n["id"] == gid), None)
+
+    def _siblings(self, gid: str) -> list[dict]:
+        node = self._gist_node(gid)
+        if not node:
+            return []
+        parent_id = node.get("parentId")
+        return [n for n in self.data["nodes"]
+                if n.get("parentId") == parent_id and n["status"] != "archived"]
+
+    def _push_undo(self):
+        import copy
+        self._undo_stack.append(copy.deepcopy(self.data))
+
+    # ── navigation ────────────────────────────────────────────────────────────
+
+    def action_cursor_down(self):
+        self.query_one(Tree).action_cursor_down()
+
+    def action_cursor_up(self):
+        self.query_one(Tree).action_cursor_up()
+
+    def action_h_key(self):
+        tree = self.query_one(Tree)
+        node = tree.cursor_node
+        if node and node.is_expanded and node != tree.root:
+            node.collapse()
+        elif node and node.parent and node.parent != tree.root:
+            tree.move_cursor(node.parent)
+
+    def action_l_key(self):
+        tree = self.query_one(Tree)
+        node = tree.cursor_node
+        if node and not node.is_expanded and node.children:
+            node.expand()
+        elif node and node.data:
+            self.action_add_child()
+
+    def action_gg_start(self):
+        if self._gg_pending:
+            self.query_one(Tree).action_scroll_home()
+            self.query_one(Tree).move_cursor(self.query_one(Tree).root)
+        self._gg_pending = not self._gg_pending
+
+    def action_go_bottom(self):
+        self._gg_pending = False
+        self.query_one(Tree).action_scroll_end()
+
+    # ── reorder ───────────────────────────────────────────────────────────────
+
+    def action_move_down(self):
+        gid = self._current_gist_id()
+        if not gid:
+            return
+        sibs = self._siblings(gid)
+        idx = next((i for i, n in enumerate(sibs) if n["id"] == gid), None)
+        if idx is None or idx >= len(sibs) - 1:
+            return
+        self._push_undo()
+        # swap positions in self.data["nodes"]
+        all_ids = [n["id"] for n in self.data["nodes"]]
+        ia = all_ids.index(sibs[idx]["id"])
+        ib = all_ids.index(sibs[idx + 1]["id"])
+        self.data["nodes"][ia], self.data["nodes"][ib] = self.data["nodes"][ib], self.data["nodes"][ia]
+        save(self.data)
+        self._rebuild(gid)
+
+    def action_move_up(self):
+        gid = self._current_gist_id()
+        if not gid:
+            return
+        sibs = self._siblings(gid)
+        idx = next((i for i, n in enumerate(sibs) if n["id"] == gid), None)
+        if idx is None or idx == 0:
+            return
+        self._push_undo()
+        all_ids = [n["id"] for n in self.data["nodes"]]
+        ia = all_ids.index(sibs[idx]["id"])
+        ib = all_ids.index(sibs[idx - 1]["id"])
+        self.data["nodes"][ia], self.data["nodes"][ib] = self.data["nodes"][ib], self.data["nodes"][ia]
+        save(self.data)
+        self._rebuild(gid)
+
+    def action_indent(self):
+        """Make current node a child of its previous sibling."""
+        gid = self._current_gist_id()
+        if not gid:
+            return
+        sibs = self._siblings(gid)
+        idx = next((i for i, n in enumerate(sibs) if n["id"] == gid), None)
+        if idx is None or idx == 0:
+            return
+        self._push_undo()
+        new_parent_id = sibs[idx - 1]["id"]
+        node = self._gist_node(gid)
+        node["parentId"] = new_parent_id
+        save(self.data)
+        self._rebuild(gid)
+
+    def action_unindent(self):
+        """Move current node up to its grandparent."""
+        gid = self._current_gist_id()
+        if not gid:
+            return
+        node = self._gist_node(gid)
+        if not node or not node.get("parentId"):
+            return
+        parent = self._gist_node(node["parentId"])
+        if not parent:
+            return
+        self._push_undo()
+        node["parentId"] = parent.get("parentId")
+        save(self.data)
+        self._rebuild(gid)
+
+    # ── mutations ─────────────────────────────────────────────────────────────
+
+    def action_add_child(self):
+        gid = self._current_gist_id()
+        parent = self._gist_node(gid) if gid else None
+        child_type = CHILD_TYPE.get(parent["type"], "free") if parent else "goal"
+        badge = BADGES[child_type]
+
+        async def _do(title):
+            if not title:
+                return
+            self._push_undo()
+            new_node = {
+                "id": new_id(), "type": child_type, "title": title,
+                "status": "active", "parentId": gid,
+                "createdAt": now(), "completedAt": None
+            }
+            self.data["nodes"].append(new_node)
+            save(self.data)
+            self._rebuild(new_node["id"])
+
+        self.push_screen(InputModal(f"New {badge}  under '{parent['title'] if parent else 'root'}'"), _do)
+
+    def action_add_sibling(self):
+        gid = self._current_gist_id()
+        node = self._gist_node(gid)
+        sib_type = node["type"] if node else "goal"
+        parent_id = node.get("parentId") if node else None
+        parent = self._gist_node(parent_id) if parent_id else None
+        badge = BADGES[sib_type]
+
+        async def _do(title):
+            if not title:
+                return
+            self._push_undo()
+            new_node = {
+                "id": new_id(), "type": sib_type, "title": title,
+                "status": "active", "parentId": parent_id,
+                "createdAt": now(), "completedAt": None
+            }
+            self.data["nodes"].append(new_node)
+            save(self.data)
+            self._rebuild(new_node["id"])
+
+        label = f"New {badge}  sibling"
+        self.push_screen(InputModal(label), _do)
+
+    def action_rename(self):
+        gid = self._current_gist_id()
+        node = self._gist_node(gid)
+        if not node:
+            return
+
+        async def _do(title):
+            if not title:
+                return
+            self._push_undo()
+            node["title"] = title
+            save(self.data)
+            self._rebuild(gid)
+
+        self.push_screen(InputModal("Rename:", node["title"]), _do)
+
+    def action_d_key(self):
+        if self._d_pending:
+            self._d_pending = False
+            gid = self._current_gist_id()
+            node = self._gist_node(gid)
+            if node:
+                self._push_undo()
+                node["status"] = "completed"
+                node["completedAt"] = now()
+                save(self.data)
+                self._rebuild()
+        else:
+            self._d_pending = True
+
+    def action_archive(self):
+        gid = self._current_gist_id()
+        node = self._gist_node(gid)
+        if not node:
+            return
+        self._push_undo()
+        node["status"] = "archived"
+        save(self.data)
+        self._rebuild()
+
+    def action_undo(self):
+        if self._undo_stack:
+            self.data = self._undo_stack.pop()
+            save(self.data)
+            self._rebuild()
+
+    def on_key(self, event: events.Key):
+        if event.key != "g":
+            self._gg_pending = False
+        if event.key != "d":
+            self._d_pending = False
+
+
+if __name__ == "__main__":
+    GistTree().run()

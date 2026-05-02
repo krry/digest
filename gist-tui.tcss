@@ -1,0 +1,59 @@
+/* GIST TUI styles — edit here, hot-reloads instantly in dev mode */
+
+Screen {
+    background: $background;
+}
+
+Tree {
+    height: 1fr;
+    background: $background;
+    padding: 2 4;
+    scrollbar-gutter: stable;
+}
+
+Tree > .tree--guides {
+    color: $primary-darken-2;
+}
+
+Tree > .tree--guides-hover {
+    color: $primary;
+}
+
+Tree > .tree--guides-selected {
+    color: $accent;
+}
+
+Tree .tree--cursor {
+    background: $primary-darken-3;
+    color: $text;
+}
+
+#modal-box {
+    background: $surface;
+    border: solid $accent;
+    border-title-color: $accent;
+    padding: 1 2;
+    width: 60;
+    height: auto;
+    margin: 4 12;
+}
+
+#modal-box Label {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#modal-box Input {
+    background: $surface-darken-1;
+    border: tall $primary-darken-2;
+    color: $text;
+}
+
+#modal-box Input:focus {
+    border: tall $accent;
+}
+
+Footer {
+    background: $surface;
+    color: $text-muted;
+}
