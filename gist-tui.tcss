@@ -7,8 +7,14 @@ Screen {
 Tree {
     height: 1fr;
     background: $background;
-    padding: 2 4;
+    padding: 1 4 0 4;
     scrollbar-gutter: stable;
+}
+
+#browser {
+    height: 1fr;
+    background: $background;
+    padding: 1 4 0 4;
 }
 
 Tree > .tree--guides {
@@ -56,4 +62,13 @@ Tree .tree--cursor {
 Footer {
     background: $surface;
     color: $text-muted;
+}
+
+#context {
+    dock: bottom;
+    height: 5;
+    padding: 1 4;
+    background: $surface-darken-1;
+    color: $text;
+    border-top: solid $primary-darken-2;
 }

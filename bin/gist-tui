@@ -1,24 +1,29 @@
 #!/usr/bin/env python3
-"""GIST TUI — Yazi-style keyboard nav for goals/ideas/steps/tasks."""
+"""GIST TUI — tree or Miller columns for goals/ideas/steps/tasks."""
 
+import copy
 import datetime
 import json
 import pathlib
 import secrets
-from textual.app import App, ComposeResult
-from textual.widgets import Tree, Footer, Input, Label
-from textual.widgets.tree import TreeNode
-from textual.binding import Binding
-from textual.screen import ModalScreen
+
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 from textual import events
+from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Vertical
+from textual.screen import ModalScreen
+from textual.widgets import Footer, Input, Label, Static
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = ROOT / "goals.json"
-VALUES = ROOT / "values.json"
 DEFAULT_DATA = {"version": 1, "nodes": []}
+ROOT_KEY = "__root__"
 BADGES = {"goal": "G", "idea": "I", "step": "S", "task": "T", "free": "·"}
 CHILD_TYPE = {"goal": "idea", "idea": "step", "step": "task", "task": "free", "free": "free"}
+
 
 def load() -> dict:
     if DATA.exists():
@@ -26,25 +31,35 @@ def load() -> dict:
     save(DEFAULT_DATA)
     return dict(DEFAULT_DATA)
 
+
 def save(data: dict):
     DATA.parent.mkdir(parents=True, exist_ok=True)
     DATA.write_text(json.dumps(data, indent=2))
 
+
 def new_id() -> str:
     return secrets.token_hex(3)
+
 
 def now() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")
 
-def node_label(n: dict) -> str:
-    badge = BADGES.get(n["type"], "·")
-    suffix = " ✓" if n["status"] == "completed" else ""
-    dim = "[dim]" if n["status"] in ("completed", "archived") else ""
-    return f"{dim}{badge}  {n['title']}{suffix}{'[/dim]' if dim else ''}"
+
+def badge_for(node_type: str) -> str:
+    return BADGES.get(node_type, "·")
+
+
+def status_label(status: str) -> str:
+    return {
+        "active": "active",
+        "completed": "completed",
+        "archived": "archived",
+    }.get(status, status)
 
 
 class InputModal(ModalScreen):
     """Floating input for rename / add."""
+
     BINDINGS = [Binding("escape", "dismiss('')", "cancel")]
 
     def __init__(self, prompt: str, default: str = ""):
@@ -64,150 +79,541 @@ class InputModal(ModalScreen):
         self.dismiss(event.value.strip())
 
 
-class GistTree(App):
+class GistBrowser(App):
     CSS_PATH = ROOT / "gist-tui.tcss"
 
     BINDINGS = [
-        Binding("j",       "cursor_down",   "down",         show=False),
-        Binding("k",       "cursor_up",     "up",           show=False),
-        Binding("h",       "h_key",         "collapse/up",  show=False),
-        Binding("l",       "l_key",         "expand/child", show=False),
-        Binding("g",       "gg_start",      "gg…",          show=False),
-        Binding("G",       "go_bottom",     "bottom",       show=False),
-        Binding("J",       "move_down",     "move↓",        show=False),
-        Binding("K",       "move_up",       "move↑",        show=False),
-        Binding("tab",     "indent",        "indent",       show=False),
-        Binding("shift+tab", "unindent",    "unindent",     show=False),
-        Binding("a",       "add_child",     "add child",    show=True),
-        Binding("A",       "add_sibling",   "add sibling",  show=True),
-        Binding("r",       "rename",        "rename",       show=True),
-        Binding("d",       "d_key",         "done (dd)",    show=False),
-        Binding("D",       "archive",       "archive",      show=False),
-        Binding("u",       "undo",          "undo",         show=True),
-        Binding("q",       "quit",          "quit",         show=True),
+        Binding("j", "cursor_down", "down", show=False),
+        Binding("k", "cursor_up", "up", show=False),
+        Binding("down", "cursor_down", "down", show=False),
+        Binding("up", "cursor_up", "up", show=False),
+        Binding("h", "left_key", "left", show=False),
+        Binding("l", "right_key", "right", show=False),
+        Binding("left", "left_key", "left", show=False),
+        Binding("right", "right_key", "right", show=False),
+        Binding("g", "gg_start", "gg…", show=False),
+        Binding("G", "go_bottom", "bottom", show=False),
+        Binding("J", "move_down", "move↓", show=False),
+        Binding("K", "move_up", "move↑", show=False),
+        Binding("tab", "indent", "indent", show=False),
+        Binding("shift+tab", "unindent", "unindent", show=False),
+        Binding("a", "add_child", "add child", show=True),
+        Binding("A", "add_sibling", "add sibling", show=True),
+        Binding("r", "edit_current", "rename", show=True),
+        Binding("enter", "edit_current", "edit", show=False),
+        Binding("d", "d_key", "done (dd)", show=False),
+        Binding("D", "archive", "archive", show=False),
+        Binding("v", "toggle_view", "view", show=True),
+        Binding("z", "toggle_archived", "archives", show=True),
+        Binding("u", "undo", "undo", show=True),
+        Binding("q", "quit", "quit", show=True),
     ]
 
     def __init__(self):
         super().__init__()
         self.data = load()
+        self.view_mode = "tree"
+        self.show_archived = False
         self._gg_pending = False
         self._d_pending = False
+        self._status_message = "Ready."
         self._undo_stack: list[dict] = []
-        self._node_map: dict[str, TreeNode] = {}  # gist id → tree node
+
+        self.cursor_memory: dict[str, str] = {}
+        self.active_depth = 0
+        self.open_depth = 0
+        self.columns_state: list[tuple[str | None, list[dict]]] = []
+
+        self.expanded_ids: set[str] = set()
+        self.tree_cursor_id: str | None = None
 
     def compose(self) -> ComposeResult:
-        yield Tree("GIST", id="tree")
+        yield Static(id="browser")
+        yield Static(id="context")
         yield Footer()
 
     def on_mount(self):
-        self._rebuild()
+        self._refresh_view()
 
-    def _rebuild(self, focus_id: str | None = None):
-        tree = self.query_one(Tree)
-        tree.clear()
-        self._node_map = {}
-        nodes_by_id = {n["id"]: n for n in self.data["nodes"]}
+    def _set_status(self, message: str):
+        self._status_message = message
+        self._update_context()
 
-        def add_children(parent_tree_node, parent_gist_id):
-            children = [n for n in self.data["nodes"]
-                        if n.get("parentId") == parent_gist_id
-                        and n["status"] != "archived"]
-            for n in children:
-                tn = parent_tree_node.add(node_label(n), data=n["id"], expand=True)
-                self._node_map[n["id"]] = tn
-                add_children(tn, n["id"])
+    def _visible_nodes(self) -> list[dict]:
+        if self.show_archived:
+            return self.data["nodes"]
+        return [n for n in self.data["nodes"] if n["status"] != "archived"]
 
-        roots = [n for n in self.data["nodes"]
-                 if n.get("parentId") is None and n["status"] != "archived"]
-        for n in roots:
-            tn = tree.root.add(node_label(n), data=n["id"], expand=True)
-            self._node_map[n["id"]] = tn
-            add_children(tn, n["id"])
-
-        tree.root.expand()
-        if focus_id and focus_id in self._node_map:
-            tree.move_cursor(self._node_map[focus_id])
-
-    def _current_gist_id(self) -> str | None:
-        tree = self.query_one(Tree)
-        node = tree.cursor_node
-        return node.data if node and node.data else None
-
-    def _gist_node(self, gid: str) -> dict | None:
+    def _gist_node(self, gid: str | None) -> dict | None:
+        if not gid:
+            return None
         return next((n for n in self.data["nodes"] if n["id"] == gid), None)
+
+    def _parent_key(self, parent_id: str | None) -> str:
+        return parent_id or ROOT_KEY
+
+    def _column_nodes(self, parent_id: str | None) -> list[dict]:
+        return [n for n in self._visible_nodes() if n.get("parentId") == parent_id]
 
     def _siblings(self, gid: str) -> list[dict]:
         node = self._gist_node(gid)
-        if not node:
-            return []
-        parent_id = node.get("parentId")
-        return [n for n in self.data["nodes"]
-                if n.get("parentId") == parent_id and n["status"] != "archived"]
+        return self._column_nodes(node.get("parentId")) if node else []
+
+    def _selected_id_for_parent(self, parent_id: str | None, nodes: list[dict]) -> str | None:
+        if not nodes:
+            return None
+        key = self._parent_key(parent_id)
+        current = self.cursor_memory.get(key)
+        valid_ids = {n["id"] for n in nodes}
+        if current in valid_ids:
+            return current
+        selected = nodes[0]["id"]
+        self.cursor_memory[key] = selected
+        return selected
+
+    def _has_visible_children(self, gid: str | None) -> bool:
+        return bool(gid and self._column_nodes(gid))
+
+    def _path_to_node(self, gid: str | None) -> list[str]:
+        path: list[str] = []
+        while gid:
+            path.append(gid)
+            node = self._gist_node(gid)
+            gid = node.get("parentId") if node else None
+        path.reverse()
+        return path
+
+    def _sync_selection_to_gid(self, gid: str | None):
+        if not gid:
+            return
+        path = self._path_to_node(gid)
+        parent_id = None
+        for current_id in path:
+            self.cursor_memory[self._parent_key(parent_id)] = current_id
+            parent_id = current_id
+        self.tree_cursor_id = gid
+        self.expanded_ids.update(path[:-1])
+        self.active_depth = max(0, len(path) - 1)
+        self.open_depth = self.active_depth
+
+    def _current_column_parent(self) -> str | None:
+        return self.columns_state[self.active_depth][0] if self.columns_state else None
+
+    def _current_column_nodes(self) -> list[dict]:
+        return self.columns_state[self.active_depth][1] if self.columns_state else []
+
+    def _current_columns_gid(self) -> str | None:
+        return self._selected_id_for_parent(self._current_column_parent(), self._current_column_nodes())
+
+    def _visible_tree_rows(self) -> list[tuple[dict, int]]:
+        rows: list[tuple[dict, int]] = []
+
+        def add_branch(parent_id: str | None, depth: int):
+            for node in self._column_nodes(parent_id):
+                rows.append((node, depth))
+                if node["id"] in self.expanded_ids:
+                    add_branch(node["id"], depth + 1)
+
+        add_branch(None, 0)
+        return rows
+
+    def _current_tree_gid(self) -> str | None:
+        rows = self._visible_tree_rows()
+        valid_ids = {node["id"] for node, _depth in rows}
+        if self.tree_cursor_id in valid_ids:
+            return self.tree_cursor_id
+        self.tree_cursor_id = rows[0][0]["id"] if rows else None
+        return self.tree_cursor_id
+
+    def _current_gist_id(self) -> str | None:
+        return self._current_tree_gid() if self.view_mode == "tree" else self._current_columns_gid()
+
+    def _build_columns_state(self):
+        columns: list[tuple[str | None, list[dict]]] = []
+        parent_id: str | None = None
+        depth = 0
+        while depth <= self.open_depth:
+            nodes = self._column_nodes(parent_id)
+            columns.append((parent_id, nodes))
+            selected = self._selected_id_for_parent(parent_id, nodes)
+            if selected is None or depth == self.open_depth or not self._has_visible_children(selected):
+                break
+            parent_id = selected
+            depth += 1
+        self.columns_state = columns or [(None, [])]
+        self.open_depth = min(self.open_depth, len(self.columns_state) - 1)
+        self.active_depth = min(self.active_depth, len(self.columns_state) - 1)
+
+    def _normalize_tree_state(self):
+        current = self._current_tree_gid()
+        if current:
+            self._sync_selection_to_gid(current)
+        else:
+            roots = self._column_nodes(None)
+            if roots:
+                self.tree_cursor_id = roots[0]["id"]
+                self._sync_selection_to_gid(self.tree_cursor_id)
+
+    def _normalize_columns_state(self):
+        if not self.columns_state:
+            self.columns_state = [(None, [])]
+        self.open_depth = min(self.open_depth, len(self.columns_state) - 1)
+        self.active_depth = min(self.active_depth, len(self.columns_state) - 1)
+
+        if self.active_depth < 0:
+            self.active_depth = 0
+        if self.open_depth < 0:
+            self.open_depth = 0
+
+        for parent_id, nodes in self.columns_state:
+            self._selected_id_for_parent(parent_id, nodes)
+
+    def _refresh_view(self):
+        self._build_columns_state()
+        if self.view_mode == "tree":
+            self._normalize_tree_state()
+        else:
+            self._normalize_columns_state()
+        self._update_browser()
+        self._update_context()
+
+    def _remember_selection(self, parent_id: str | None, gid: str):
+        self.cursor_memory[self._parent_key(parent_id)] = gid
 
     def _push_undo(self):
-        import copy
-        self._undo_stack.append(copy.deepcopy(self.data))
+        self._undo_stack.append(
+            {
+                "data": copy.deepcopy(self.data),
+                "view_mode": self.view_mode,
+                "show_archived": self.show_archived,
+                "cursor_memory": copy.deepcopy(self.cursor_memory),
+                "active_depth": self.active_depth,
+                "open_depth": self.open_depth,
+                "expanded_ids": copy.deepcopy(self.expanded_ids),
+                "tree_cursor_id": self.tree_cursor_id,
+            }
+        )
+
+    def _focus_after_hidden(self, parent_id: str | None):
+        siblings = self._column_nodes(parent_id)
+        if siblings:
+            self._sync_selection_to_gid(siblings[0]["id"])
+            return
+        if parent_id:
+            self._sync_selection_to_gid(parent_id)
+            return
+        self.tree_cursor_id = None
+
+    def _node_actions(self, gid: str | None) -> dict[str, bool | str]:
+        node = self._gist_node(gid)
+        has_children = self._has_visible_children(gid)
+        if not node:
+            return {
+                "can_add_child": True,
+                "can_add_sibling": True,
+                "can_move_up": False,
+                "can_move_down": False,
+                "can_indent": False,
+                "can_unindent": False,
+                "can_edit": False,
+                "can_done": False,
+                "can_archive": False,
+                "has_children": False,
+                "open_state": "closed",
+            }
+        sibs = self._siblings(gid)
+        idx = next((i for i, n in enumerate(sibs) if n["id"] == gid), None)
+        if self.view_mode == "tree":
+            open_state = "open" if gid in self.expanded_ids else "closed"
+        else:
+            open_state = "open" if self.active_depth < self.open_depth else "closed"
+        return {
+            "can_add_child": True,
+            "can_add_sibling": True,
+            "can_move_up": idx is not None and idx > 0,
+            "can_move_down": idx is not None and idx < len(sibs) - 1,
+            "can_indent": idx is not None and idx > 0,
+            "can_unindent": bool(node.get("parentId")),
+            "can_edit": True,
+            "can_done": True,
+            "can_archive": True,
+            "has_children": has_children,
+            "open_state": open_state,
+        }
+
+    def _render_columns_browser(self):
+        panels = []
+        for depth, (parent_id, nodes) in enumerate(self.columns_state):
+            title = "root" if depth == 0 else (self._gist_node(parent_id) or {}).get("title", "root")
+            text = Text()
+            if not nodes:
+                text.append("Nothing here.", style="dim")
+            else:
+                selected_id = self._selected_id_for_parent(parent_id, nodes)
+                for i, node in enumerate(nodes):
+                    line = Text()
+                    line.append(f"{badge_for(node['type'])}  ")
+                    label = node["title"] + (" ✓" if node["status"] == "completed" else "")
+                    line.append(label)
+                    if node["status"] in ("completed", "archived"):
+                        line.stylize("dim")
+                    if node["id"] == selected_id:
+                        line.stylize("reverse" if depth == self.active_depth else "bold")
+                    text.append(line)
+                    if i < len(nodes) - 1:
+                        text.append("\n")
+            panels.append(Panel(text, title=title, border_style="yellow" if depth == self.active_depth else "grey35", expand=True))
+
+        grid = Table.grid(expand=True)
+        for _ in panels:
+            grid.add_column(ratio=1)
+        if panels:
+            grid.add_row(*panels)
+        else:
+            grid.add_column(ratio=1)
+            grid.add_row(Panel(Text("Nothing here.", style="dim"), title="root", border_style="grey35", expand=True))
+        return grid
+
+    def _render_tree_browser(self) -> Panel:
+        rows = self._visible_tree_rows()
+        current = self._current_tree_gid()
+        text = Text()
+        if not rows:
+            text.append("Nothing here.", style="dim")
+        else:
+            for i, (node, depth) in enumerate(rows):
+                line = Text("  " * depth)
+                has_children = self._has_visible_children(node["id"])
+                marker = "▼" if node["id"] in self.expanded_ids and has_children else "▶" if has_children else "•"
+                line.append(f"{marker} {badge_for(node['type'])}  ")
+                label = node["title"] + (" ✓" if node["status"] == "completed" else "")
+                line.append(label)
+                if node["status"] in ("completed", "archived"):
+                    line.stylize("dim")
+                if node["id"] == current:
+                    line.stylize("reverse")
+                text.append(line)
+                if i < len(rows) - 1:
+                    text.append("\n")
+        return Panel(text, title="tree", border_style="yellow")
+
+    def _update_browser(self):
+        browser = self.query_one("#browser", Static)
+        browser.update(self._render_tree_browser() if self.view_mode == "tree" else self._render_columns_browser())
+
+    def _update_context(self):
+        widget = self.query_one("#context", Static)
+        gid = self._current_gist_id()
+        node = self._gist_node(gid)
+        actions = self._node_actions(gid)
+        if node:
+            parent = self._gist_node(node.get("parentId")) if node.get("parentId") else None
+            child_type = CHILD_TYPE.get(node["type"], "free")
+            lines = [
+                f"[b]{badge_for(node['type'])}[/b] {node['title']}  [dim]({status_label(node['status'])})[/dim]  view: {self.view_mode}",
+                f"parent: {parent['title'] if parent else 'root'}",
+                f"a -> {badge_for(child_type)} child   A -> {badge_for(node['type'])} sibling   enter -> edit   v -> switch view",
+                "move: "
+                f"{'↑' if actions['can_move_up'] else '·'} "
+                f"{'↓' if actions['can_move_down'] else '·'}   "
+                f"indent: {'yes' if actions['can_indent'] else 'no'}   "
+                f"unindent: {'yes' if actions['can_unindent'] else 'no'}",
+                f"children: {'yes' if actions['has_children'] else 'no'}   open: {actions['open_state']}   archives: {'shown' if self.show_archived else 'hidden'}   status: {self._status_message}",
+            ]
+        else:
+            lines = [
+                f"[b]root[/b]  [dim](no node selected)[/dim]  view: {self.view_mode}",
+                "parent: root",
+                "a -> G child   A -> G sibling   enter -> edit   v -> switch view",
+                "move: · ·   indent: no   unindent: no",
+                f"children: no   open: closed   archives: {'shown' if self.show_archived else 'hidden'}   status: {self._status_message}",
+            ]
+        widget.update("\n".join(lines))
+
+    def _move_columns_selection(self, delta: int):
+        parent_id = self._current_column_parent()
+        nodes = self._current_column_nodes()
+        if not nodes:
+            self._set_status("Nothing to select here.")
+            return
+        gid = self._selected_id_for_parent(parent_id, nodes)
+        idx = next((i for i, n in enumerate(nodes) if n["id"] == gid), 0)
+        new_idx = max(0, min(len(nodes) - 1, idx + delta))
+        if new_idx == idx:
+            self._set_status(f"Already at the {'bottom' if delta > 0 else 'top'} of this column.")
+            return
+        new_gid = nodes[new_idx]["id"]
+        self._remember_selection(parent_id, new_gid)
+        if self.active_depth < self.open_depth:
+            self.open_depth = self.active_depth + 1 if self._has_visible_children(new_gid) else self.active_depth
+        self._refresh_view()
+
+    def _move_tree_selection(self, delta: int):
+        rows = self._visible_tree_rows()
+        if not rows:
+            self._set_status("Nothing to select here.")
+            return
+        current = self._current_tree_gid()
+        idx = next((i for i, (node, _depth) in enumerate(rows) if node["id"] == current), 0)
+        new_idx = max(0, min(len(rows) - 1, idx + delta))
+        if new_idx == idx:
+            self._set_status(f"Already at the {'bottom' if delta > 0 else 'top'} of the tree.")
+            return
+        node, _depth = rows[new_idx]
+        self.tree_cursor_id = node["id"]
+        self._remember_selection(node.get("parentId"), node["id"])
+        self._refresh_view()
 
     # ── navigation ────────────────────────────────────────────────────────────
 
     def action_cursor_down(self):
-        self.query_one(Tree).action_cursor_down()
+        if self.view_mode == "tree":
+            self._move_tree_selection(1)
+        else:
+            self._move_columns_selection(1)
 
     def action_cursor_up(self):
-        self.query_one(Tree).action_cursor_up()
+        if self.view_mode == "tree":
+            self._move_tree_selection(-1)
+        else:
+            self._move_columns_selection(-1)
 
-    def action_h_key(self):
-        tree = self.query_one(Tree)
-        node = tree.cursor_node
-        if node and node.is_expanded and node != tree.root:
-            node.collapse()
-        elif node and node.parent and node.parent != tree.root:
-            tree.move_cursor(node.parent)
+    def action_left_key(self):
+        gid = self._current_gist_id()
+        node = self._gist_node(gid)
+        if self.view_mode == "columns":
+            if self.active_depth < self.open_depth:
+                self.open_depth = self.active_depth
+                self._refresh_view()
+                self._set_status("Closed child column.")
+                return
+            if self.active_depth > 0:
+                self.active_depth -= 1
+                self.open_depth = self.active_depth
+                self._refresh_view()
+                self._set_status("Moved to parent column.")
+                return
+            self._set_status("Already at the root column.")
+            return
 
-    def action_l_key(self):
-        tree = self.query_one(Tree)
-        node = tree.cursor_node
-        if node and not node.is_expanded and node.children:
-            node.expand()
-        elif node and node.data:
-            self.action_add_child()
+        if not node:
+            self._set_status("No node selected.")
+            return
+        if gid in self.expanded_ids and self._has_visible_children(gid):
+            self.expanded_ids.discard(gid)
+            self._refresh_view()
+            self._set_status("Collapsed branch.")
+            return
+        parent_id = node.get("parentId")
+        if not parent_id:
+            self._set_status("Already at the root.")
+            return
+        self.expanded_ids.discard(parent_id)
+        self.tree_cursor_id = parent_id
+        self._refresh_view()
+        self._set_status("Closed ancestor branch.")
+
+    def action_right_key(self):
+        gid = self._current_gist_id()
+        node = self._gist_node(gid)
+        if not node:
+            self._set_status("No node selected.")
+            return
+        if not self._has_visible_children(gid):
+            self._set_status("No children to open.")
+            return
+        if self.view_mode == "columns":
+            self.open_depth = self.active_depth + 1
+            self.active_depth = self.open_depth
+            child_nodes = self._column_nodes(gid)
+            if child_nodes:
+                self._selected_id_for_parent(gid, child_nodes)
+            self._refresh_view()
+            self._set_status("Opened child column.")
+            return
+
+        if gid not in self.expanded_ids:
+            self.expanded_ids.add(gid)
+            self._refresh_view()
+            self._set_status("Expanded branch.")
+            return
+        children = self._column_nodes(gid)
+        child_id = self._selected_id_for_parent(gid, children)
+        if child_id:
+            self.tree_cursor_id = child_id
+            self._refresh_view()
+            self._set_status("Moved into child.")
 
     def action_gg_start(self):
         if self._gg_pending:
-            self.query_one(Tree).action_scroll_home()
-            self.query_one(Tree).move_cursor(self.query_one(Tree).root)
+            if self.view_mode == "tree":
+                rows = self._visible_tree_rows()
+                if rows:
+                    self.tree_cursor_id = rows[0][0]["id"]
+                    self._refresh_view()
+                    self._set_status("Moved to top of tree.")
+            else:
+                nodes = self._current_column_nodes()
+                if nodes:
+                    self._remember_selection(self._current_column_parent(), nodes[0]["id"])
+                    if self.active_depth < self.open_depth:
+                        self.open_depth = self.active_depth + 1 if self._has_visible_children(nodes[0]["id"]) else self.active_depth
+                    self._refresh_view()
+                    self._set_status("Moved to top of column.")
         self._gg_pending = not self._gg_pending
 
     def action_go_bottom(self):
         self._gg_pending = False
-        self.query_one(Tree).action_scroll_end()
+        if self.view_mode == "tree":
+            rows = self._visible_tree_rows()
+            if not rows:
+                self._set_status("Nothing in the tree.")
+                return
+            self.tree_cursor_id = rows[-1][0]["id"]
+            self._refresh_view()
+            self._set_status("Moved to bottom of tree.")
+            return
+        nodes = self._current_column_nodes()
+        if not nodes:
+            self._set_status("Nothing in this column.")
+            return
+        self._remember_selection(self._current_column_parent(), nodes[-1]["id"])
+        if self.active_depth < self.open_depth:
+            self.open_depth = self.active_depth + 1 if self._has_visible_children(nodes[-1]["id"]) else self.active_depth
+        self._refresh_view()
+        self._set_status("Moved to bottom of column.")
 
     # ── reorder ───────────────────────────────────────────────────────────────
 
     def action_move_down(self):
         gid = self._current_gist_id()
         if not gid:
+            self._set_status("No node selected.")
             return
         sibs = self._siblings(gid)
         idx = next((i for i, n in enumerate(sibs) if n["id"] == gid), None)
         if idx is None or idx >= len(sibs) - 1:
+            self._set_status("Already at the bottom of this level.")
             return
         self._push_undo()
-        # swap positions in self.data["nodes"]
         all_ids = [n["id"] for n in self.data["nodes"]]
         ia = all_ids.index(sibs[idx]["id"])
         ib = all_ids.index(sibs[idx + 1]["id"])
         self.data["nodes"][ia], self.data["nodes"][ib] = self.data["nodes"][ib], self.data["nodes"][ia]
         save(self.data)
-        self._rebuild(gid)
+        self._sync_selection_to_gid(gid)
+        self._refresh_view()
+        self._set_status("Moved down.")
 
     def action_move_up(self):
         gid = self._current_gist_id()
         if not gid:
+            self._set_status("No node selected.")
             return
         sibs = self._siblings(gid)
         idx = next((i for i, n in enumerate(sibs) if n["id"] == gid), None)
         if idx is None or idx == 0:
+            self._set_status("Already at the top of this level.")
             return
         self._push_undo()
         all_ids = [n["id"] for n in self.data["nodes"]]
@@ -215,39 +621,48 @@ class GistTree(App):
         ib = all_ids.index(sibs[idx - 1]["id"])
         self.data["nodes"][ia], self.data["nodes"][ib] = self.data["nodes"][ib], self.data["nodes"][ia]
         save(self.data)
-        self._rebuild(gid)
+        self._sync_selection_to_gid(gid)
+        self._refresh_view()
+        self._set_status("Moved up.")
 
     def action_indent(self):
-        """Make current node a child of its previous sibling."""
         gid = self._current_gist_id()
         if not gid:
+            self._set_status("No node selected.")
             return
         sibs = self._siblings(gid)
         idx = next((i for i, n in enumerate(sibs) if n["id"] == gid), None)
         if idx is None or idx == 0:
+            self._set_status("Can't indent the first item at this level.")
             return
         self._push_undo()
-        new_parent_id = sibs[idx - 1]["id"]
         node = self._gist_node(gid)
+        new_parent_id = sibs[idx - 1]["id"]
         node["parentId"] = new_parent_id
         save(self.data)
-        self._rebuild(gid)
+        self._sync_selection_to_gid(gid)
+        self._refresh_view()
+        self._set_status("Indented under previous sibling.")
 
     def action_unindent(self):
-        """Move current node up to its grandparent."""
         gid = self._current_gist_id()
         if not gid:
+            self._set_status("No node selected.")
             return
         node = self._gist_node(gid)
         if not node or not node.get("parentId"):
+            self._set_status("Can't unindent a root item.")
             return
         parent = self._gist_node(node["parentId"])
         if not parent:
+            self._set_status("Can't unindent without a valid parent.")
             return
         self._push_undo()
         node["parentId"] = parent.get("parentId")
         save(self.data)
-        self._rebuild(gid)
+        self._sync_selection_to_gid(gid)
+        self._refresh_view()
+        self._set_status("Unindented one level.")
 
     # ── mutations ─────────────────────────────────────────────────────────────
 
@@ -255,20 +670,28 @@ class GistTree(App):
         gid = self._current_gist_id()
         parent = self._gist_node(gid) if gid else None
         child_type = CHILD_TYPE.get(parent["type"], "free") if parent else "goal"
-        badge = BADGES[child_type]
+        badge = badge_for(child_type)
 
-        async def _do(title):
+        async def _do(title: str):
             if not title:
                 return
             self._push_undo()
             new_node = {
-                "id": new_id(), "type": child_type, "title": title,
-                "status": "active", "parentId": gid,
-                "createdAt": now(), "completedAt": None
+                "id": new_id(),
+                "type": child_type,
+                "title": title,
+                "status": "active",
+                "parentId": gid,
+                "createdAt": now(),
+                "completedAt": None,
             }
             self.data["nodes"].append(new_node)
             save(self.data)
-            self._rebuild(new_node["id"])
+            if gid:
+                self.expanded_ids.add(gid)
+            self._sync_selection_to_gid(new_node["id"])
+            self._refresh_view()
+            self._set_status(f"Added {badge} {title}.")
 
         self.push_screen(InputModal(f"New {badge}  under '{parent['title'] if parent else 'root'}'"), _do)
 
@@ -277,70 +700,114 @@ class GistTree(App):
         node = self._gist_node(gid)
         sib_type = node["type"] if node else "goal"
         parent_id = node.get("parentId") if node else None
-        parent = self._gist_node(parent_id) if parent_id else None
-        badge = BADGES[sib_type]
+        badge = badge_for(sib_type)
 
-        async def _do(title):
+        async def _do(title: str):
             if not title:
                 return
             self._push_undo()
             new_node = {
-                "id": new_id(), "type": sib_type, "title": title,
-                "status": "active", "parentId": parent_id,
-                "createdAt": now(), "completedAt": None
+                "id": new_id(),
+                "type": sib_type,
+                "title": title,
+                "status": "active",
+                "parentId": parent_id,
+                "createdAt": now(),
+                "completedAt": None,
             }
             self.data["nodes"].append(new_node)
             save(self.data)
-            self._rebuild(new_node["id"])
+            self._sync_selection_to_gid(new_node["id"])
+            self._refresh_view()
+            self._set_status(f"Added {badge} {title}.")
 
-        label = f"New {badge}  sibling"
-        self.push_screen(InputModal(label), _do)
+        self.push_screen(InputModal(f"New {badge}  sibling"), _do)
 
-    def action_rename(self):
+    def action_edit_current(self):
         gid = self._current_gist_id()
         node = self._gist_node(gid)
         if not node:
+            self._set_status("No node selected to edit.")
             return
 
-        async def _do(title):
+        async def _do(title: str):
             if not title:
                 return
             self._push_undo()
             node["title"] = title
             save(self.data)
-            self._rebuild(gid)
+            self._sync_selection_to_gid(gid)
+            self._refresh_view()
+            self._set_status(f"Renamed to {title}.")
 
-        self.push_screen(InputModal("Rename:", node["title"]), _do)
+        self.push_screen(InputModal("Edit title:", node["title"]), _do)
 
     def action_d_key(self):
         if self._d_pending:
             self._d_pending = False
             gid = self._current_gist_id()
             node = self._gist_node(gid)
-            if node:
-                self._push_undo()
-                node["status"] = "completed"
-                node["completedAt"] = now()
-                save(self.data)
-                self._rebuild()
+            if not node:
+                self._set_status("No node selected to complete.")
+                return
+            self._push_undo()
+            node["status"] = "completed"
+            node["completedAt"] = now()
+            save(self.data)
+            self._sync_selection_to_gid(gid)
+            self._refresh_view()
+            self._set_status(f"Completed {node['title']}.")
         else:
             self._d_pending = True
+            self._set_status("Press d again to mark complete.")
 
     def action_archive(self):
         gid = self._current_gist_id()
         node = self._gist_node(gid)
         if not node:
+            self._set_status("No node selected to archive.")
             return
         self._push_undo()
+        parent_id = node.get("parentId")
+        title = node["title"]
         node["status"] = "archived"
         save(self.data)
-        self._rebuild()
+        if self.show_archived:
+            self._sync_selection_to_gid(gid)
+        else:
+            self._focus_after_hidden(parent_id)
+        self._refresh_view()
+        self._set_status(f"Archived {title}.")
+
+    def action_toggle_view(self):
+        gid = self._current_gist_id()
+        self.view_mode = "columns" if self.view_mode == "tree" else "tree"
+        if gid:
+            self._sync_selection_to_gid(gid)
+        self._refresh_view()
+        self._set_status(f"Switched to {self.view_mode} view.")
+
+    def action_toggle_archived(self):
+        self.show_archived = not self.show_archived
+        self._refresh_view()
+        self._set_status(f"{'Showing' if self.show_archived else 'Hiding'} archived items.")
 
     def action_undo(self):
-        if self._undo_stack:
-            self.data = self._undo_stack.pop()
-            save(self.data)
-            self._rebuild()
+        if not self._undo_stack:
+            self._set_status("Nothing to undo.")
+            return
+        state = self._undo_stack.pop()
+        self.data = state["data"]
+        self.view_mode = state["view_mode"]
+        self.show_archived = state["show_archived"]
+        self.cursor_memory = state["cursor_memory"]
+        self.active_depth = state["active_depth"]
+        self.open_depth = state["open_depth"]
+        self.expanded_ids = state["expanded_ids"]
+        self.tree_cursor_id = state["tree_cursor_id"]
+        save(self.data)
+        self._refresh_view()
+        self._set_status("Undid last change.")
 
     def on_key(self, event: events.Key):
         if event.key != "g":
@@ -350,4 +817,4 @@ class GistTree(App):
 
 
 if __name__ == "__main__":
-    GistTree().run()
+    GistBrowser().run()
