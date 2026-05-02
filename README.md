@@ -1,23 +1,23 @@
 # digest-gist
 
-Small personal GIST todo app with a Python Textual TUI and JSON datastore.
+A tiny personal goals-and-todos app.
+
+It lives in the terminal, uses [Textual](https://textual.textualize.io/) for the TUI, and stores everything in local JSON files.
 
 ## Setup
+
+Run:
 
 ```bash
 ./bin/init.sh
 ```
 
-That creates local `goals.json`, `values.json`, and `checkins.json` from committed `.example` templates if they do not already exist.
+That creates your local data files from the committed examples. Your actual data stays untracked.
 
-## Main commands
+## Use it
 
-```bash
-./bin/gist-tui
-./bin/show.sh
-./bin/show.sh all
-./bin/add.sh <type> <parentId|null> "<title>"
-./bin/done.sh <search terms>
-./bin/checkin-status.sh [force]
-echo '[{"phrase":"...","pinnedMoment":"..."}]' | ./bin/write-values.sh
-```
+- `./bin/gist-tui` opens the interactive app.
+- `./bin/show.sh` prints the current tree.
+- `./bin/show.sh all` includes archived items.
+
+Everything else in `bin/` is there to support the skills and small scriptable actions.
