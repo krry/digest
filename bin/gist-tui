@@ -4,8 +4,14 @@
 import copy
 import datetime
 import json
+import os
 import pathlib
 import secrets
+import subprocess
+import warnings
+
+warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*GIL.*")
+warnings.filterwarnings("ignore", message=".*Unclosed client session.*")
 
 from rich.panel import Panel
 from rich.table import Table
@@ -13,12 +19,44 @@ from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, Label, Static
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = ROOT / "goals.json"
+PREFS = ROOT / "prefs.json"
+
+LIGHT_THEMES = {
+    "ansi-light", "atom-one-light", "catppuccin-latte",
+    "rose-pine-dawn", "solarized-light", "textual-light",
+}
+DEFAULT_DARK  = "nord"
+DEFAULT_LIGHT = "catppuccin-latte"
+
+
+def _system_is_dark() -> bool:
+    try:
+        result = subprocess.run(
+            ["defaults", "read", "-g", "AppleInterfaceStyle"],
+            capture_output=True, text=True,
+        )
+        return result.returncode == 0 and "dark" in result.stdout.lower()
+    except Exception:
+        return True
+
+
+def _load_prefs() -> dict:
+    if PREFS.exists():
+        try:
+            return json.loads(PREFS.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_prefs(prefs: dict):
+    PREFS.write_text(json.dumps(prefs, indent=2))
 DEFAULT_DATA = {"version": 1, "nodes": []}
 ROOT_KEY = "__root__"
 BADGES = {"goal": "G", "idea": "I", "step": "S", "task": "T", "free": "·"}
@@ -31,7 +69,26 @@ TYPE_LABELS = {
     "task": "Tasks",
     "free": "Free",
 }
-SORT_OPTIONS = ["manual", "title", "created", "status", "completed"]
+SORT_OPTIONS = ["manual", "title", "created", "status", "completed", "import", "due"]
+
+# importance: None | 1–5, displayed as !-glyphs prefix
+IMPORT_GLYPHS: dict[int | None, str] = {
+    None: "",
+    1: "! ",
+    2: "!! ",
+    3: "!!! ",
+    4: "!!!! ",
+    5: "!!!!! ",
+}
+
+
+def importance_prefix(node: dict) -> str:
+    return IMPORT_GLYPHS.get(node.get("importance"), "")
+
+
+def due_label(node: dict) -> str:
+    d = node.get("dueDate")
+    return f" due:{d}" if d else ""
 
 
 def load() -> dict:
@@ -66,6 +123,63 @@ def status_label(status: str) -> str:
     }.get(status, status)
 
 
+# ── space launcher + ex-mode ──────────────────────────────────────────────────
+
+SPACE_COMMANDS = [
+    ("o", "onboard",   "gist-onboard"),
+    ("c", "check-in",  "gist-checkin"),
+    ("s", "show",      "gist-show"),
+    ("p", "prefs",     "__prefs__"),
+]
+
+EX_ALIASES = {
+    "onboard":  "gist-onboard",
+    "checkin":  "gist-checkin",
+    "check-in": "gist-checkin",
+    "show":     "gist-show",
+    "prefs":    "__prefs__",
+    "config":   "__prefs__",
+    "q":        "__quit__",
+    "quit":     "__quit__",
+}
+
+
+class SpaceLauncher(ModalScreen):
+    BINDINGS = [Binding("escape", "dismiss(None)", "cancel")]
+
+    def compose(self) -> ComposeResult:
+        rows = "\n".join(f"  \\[{k}]  {label}" for k, label, _ in SPACE_COMMANDS)
+        with Vertical(id="launcher-box"):
+            yield Label("── launch ──", id="launcher-title")
+            yield Static(rows, id="launcher-list")
+
+    def on_mount(self):
+        self.query_one("#launcher-list").focus()
+
+    def on_key(self, event: events.Key):
+        for key, _label, cmd in SPACE_COMMANDS:
+            if event.key == key:
+                event.stop()
+                self.dismiss(cmd)
+                return
+        if event.key != "escape":
+            self.dismiss(None)
+
+
+class ExMode(ModalScreen):
+    BINDINGS = [Binding("escape", "dismiss(None)", "cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="ex-box"):
+            yield Input(placeholder="onboard · checkin · show · prefs · q", id="ex-input")
+
+    def on_mount(self):
+        self.query_one(Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted):
+        self.dismiss(event.value.strip())
+
+
 class InputModal(ModalScreen):
     """Floating input for rename / add."""
 
@@ -86,6 +200,83 @@ class InputModal(ModalScreen):
 
     def on_input_submitted(self, event: Input.Submitted):
         self.dismiss(event.value.strip())
+
+
+HELP_SECTIONS = [
+    ("navigate", [
+        ("j / k",       "move down / up"),
+        ("h / l",       "collapse or go to parent / expand or add child"),
+        ("gg / G",      "top / bottom"),
+        ("↑ ↓ ← →",     "arrow key equivalents"),
+    ]),
+    ("reorder", [
+        ("J / K",       "swap with next / previous sibling"),
+        ("tab",         "indent under previous sibling"),
+        ("shift+tab",   "unindent to grandparent"),
+        ("x",           "cut  (subtree moves with it)"),
+        ("y",           "yank / copy"),
+        ("p",           "paste under current selection"),
+    ]),
+    ("add", [
+        ("a",           "add child node"),
+        ("A",           "add sibling node"),
+    ]),
+    ("edit", [
+        ("r / enter",   "rename"),
+        ("i",           "cycle importance  — / ! / !! / !!! / !!!! / !!!!!"),
+        ("I",           "set due date  YYYY · YYYY-MM · YYYY-MM-DD"),
+        ("T",           "edit tags  (comma-separated)"),
+        ("dd",          "mark done"),
+        ("D",           "archive"),
+        ("u",           "undo"),
+    ]),
+    ("view", [
+        ("v",           "toggle tree ↔ columns"),
+        ("c",           "toggle context panel"),
+        ("f",           "toggle branch ↔ all-level scope  (columns)"),
+        ("s",           "cycle sort  manual/title/created/status/import/due"),
+        ("z",           "show / hide archived"),
+    ]),
+    ("app", [
+        ("space",       "launch panel  o=onboard  c=checkin  s=show  p=prefs"),
+        (":",           "ex-mode  onboard · checkin · show · prefs · q"),
+        ("?",           "this help"),
+        ("ctrl+\\",     "theme palette"),
+        ("q",           "quit"),
+    ]),
+]
+
+
+class HelpModal(ModalScreen):
+    BINDINGS = [
+        Binding("escape",        "dismiss(None)", "close"),
+        Binding("q",             "dismiss(None)", "close"),
+        Binding("question_mark", "dismiss(None)", "close"),
+        Binding("j",             "scroll_down",   "down", show=False),
+        Binding("k",             "scroll_up",     "up",   show=False),
+    ]
+
+    def action_scroll_down(self):
+        self.query_one("#help-scroll").scroll_down()
+
+    def action_scroll_up(self):
+        self.query_one("#help-scroll").scroll_up()
+
+    def compose(self) -> ComposeResult:
+        table = Table(box=None, show_header=False, padding=(0, 2, 0, 0), expand=False)
+        table.add_column("key",  style="yellow", width=14, no_wrap=True)
+        table.add_column("desc", no_wrap=True)
+        for section, entries in HELP_SECTIONS:
+            table.add_row(f"\n {section}", "", style="bold")
+            for key, desc in entries:
+                table.add_row(f"  {key}", desc)
+        with Vertical(id="help-box"):
+            yield Label("GIST — keyboard reference  [dim](j/k · scroll · esc)[/dim]", id="help-title")
+            with VerticalScroll(id="help-scroll"):
+                yield Static(table, id="help-body")
+
+    def on_mount(self):
+        self.query_one("#help-scroll").focus()
 
 
 class GistBrowser(App):
@@ -110,35 +301,66 @@ class GistBrowser(App):
         Binding("A", "add_sibling", "add sibling", show=True),
         Binding("r", "edit_current", "rename", show=True),
         Binding("enter", "edit_current", "edit", show=False),
-        Binding("d", "d_key", "done (dd)", show=False),
+        Binding("d", "d_key", "done", show=True),
         Binding("D", "archive", "archive", show=False),
-        Binding("f", "toggle_level_scope", "all-level", show=True),
+        Binding("f", "toggle_level_scope", "filter all/nested", show=True),
         Binding("s", "cycle_sort", "sort", show=True),
         Binding("v", "toggle_view", "view", show=True),
         Binding("z", "toggle_archived", "archives", show=True),
+        Binding("x", "cut", "cut", show=False),
+        Binding("y", "yank", "yank", show=False),
+        Binding("p", "paste", "paste", show=False),
+        Binding("c", "toggle_context", "context", show=False),
+        Binding("i", "cycle_importance", "importance", show=True),
+        Binding("I", "set_due", "due date", show=False),
+        Binding("T", "edit_tags", "tags", show=False),
         Binding("u", "undo", "undo", show=True),
+        Binding("question_mark", "help", "help", show=True),
+        Binding("space",  "space_launch", "launch", show=False, priority=True),
+        Binding("colon",  "ex_mode",      ":cmd",   show=False, priority=True),
         Binding("q", "quit", "quit", show=True),
     ]
 
     def __init__(self):
         super().__init__()
         self.data = load()
-        self.view_mode = "tree"
+        prefs = _load_prefs()
+        if _system_is_dark():
+            self.theme = prefs.get("theme_dark", DEFAULT_DARK)
+        else:
+            self.theme = prefs.get("theme_light", DEFAULT_LIGHT)
+        # JSON keys are strings; restore as int-keyed dict
+        self.column_sort: dict[int, str] = {
+            int(k): v for k, v in prefs.get("column_sort", {}).items()
+        }
+        self.view_mode = prefs.get("view_mode", "columns")
         self.show_archived = False
         self._gg_pending = False
         self._d_pending = False
         self._status_message = "Ready."
         self._undo_stack: list[dict] = []
+        self._cut_id: str | None = None
+        self._yank_node: dict | None = None
+        self.show_context = True
 
         self.cursor_memory: dict[str, str] = {}
         self.active_depth = 0
         self.open_depth = 0
         self.columns_state: list[dict] = []
         self.column_scope: dict[int, str] = {}
-        self.column_sort: dict[int, str] = {}
 
-        self.expanded_ids: set[str] = set()
+        saved_expanded = prefs.get("expanded_ids", None)
+        self.expanded_ids: set[str] = (
+            set(saved_expanded) if saved_expanded is not None
+            else self._all_expandable_ids()
+        )
         self.tree_cursor_id: str | None = None
+
+    def watch_theme(self, theme: str):
+        prefs = _load_prefs()
+        key = "theme_light" if theme in LIGHT_THEMES else "theme_dark"
+        prefs[key] = theme
+        _save_prefs(prefs)
 
     def compose(self) -> ComposeResult:
         yield Static(id="browser")
@@ -153,14 +375,29 @@ class GistBrowser(App):
         self._update_context()
 
     def _visible_nodes(self) -> list[dict]:
-        if self.show_archived:
-            return self.data["nodes"]
-        return [n for n in self.data["nodes"] if n["status"] != "archived"]
+        nodes = self.data["nodes"]
+        if not self.show_archived:
+            nodes = [n for n in nodes if n["status"] != "archived"]
+        if self._cut_id:
+            nodes = [n for n in nodes if n["id"] != self._cut_id]
+        return nodes
 
     def _gist_node(self, gid: str | None) -> dict | None:
         if not gid:
             return None
         return next((n for n in self.data["nodes"] if n["id"] == gid), None)
+
+    def _all_expandable_ids(self) -> set[str]:
+        """IDs of every node that has at least one visible child — used for full expand."""
+        parent_ids = {n.get("parentId") for n in self.data["nodes"] if n.get("parentId")}
+        return {n["id"] for n in self.data["nodes"] if n["id"] in parent_ids}
+
+    def _natural_type(self, parent_id: str | None) -> str:
+        """Return the type a node should have as a child of parent_id."""
+        if parent_id is None:
+            return "goal"
+        parent = self._gist_node(parent_id)
+        return CHILD_TYPE.get(parent["type"], "free") if parent else "goal"
 
     def _parent_key(self, parent_id: str | None) -> str:
         return parent_id or ROOT_KEY
@@ -191,6 +428,12 @@ class GistBrowser(App):
             return sorted(nodes, key=lambda n: (status_rank.get(n["status"], 9), n["title"].lower()))
         if sort_key == "completed":
             return sorted(nodes, key=lambda n: n.get("completedAt") or "", reverse=True)
+        if sort_key == "import":
+            # high importance (5) first; None sorts last
+            return sorted(nodes, key=lambda n: (-(n.get("importance") or 0), n["title"].lower()))
+        if sort_key == "due":
+            # soonest due first; None sorts last
+            return sorted(nodes, key=lambda n: (n.get("dueDate") or "9999", n["title"].lower()))
         return nodes
 
     def _column_state_for_depth(self, parent_id: str | None, depth: int) -> dict:
@@ -432,8 +675,14 @@ class GistBrowser(App):
                 selected_id = self._selected_id_for_key(column["selection_key"], nodes)
                 for i, node in enumerate(nodes):
                     line = Text()
+                    imp = importance_prefix(node)
+                    if imp:
+                        line.append(imp, style="yellow")
+                    has_ch = self._has_visible_children(node["id"])
                     label = node["title"] + (" ✓" if node["status"] == "completed" else "")
                     line.append(label)
+                    if has_ch:
+                        line.append(" ›", style="dim")
                     if node["status"] in ("completed", "archived"):
                         line.stylize("dim")
                     if node["id"] == selected_id:
@@ -441,10 +690,12 @@ class GistBrowser(App):
                     text.append(line)
                     if i < len(nodes) - 1:
                         text.append("\n")
+            sort_mode = self._column_sort_for_depth(depth)
+            sort_tag = f" [dim]· {sort_mode}[/dim]" if sort_mode != "manual" else ""
             panels.append(
                 Panel(
                     text,
-                    title=column["title"],
+                    title=column["title"] + sort_tag,
                     border_style="yellow" if depth == self.active_depth else "grey35",
                     expand=True,
                 )
@@ -472,6 +723,9 @@ class GistBrowser(App):
                 has_children = self._has_visible_children(node["id"])
                 marker = "▼" if node["id"] in self.expanded_ids and has_children else "▶" if has_children else "•"
                 line.append(f"{marker} {badge_for(node['type'])}  ")
+                imp = importance_prefix(node)
+                if imp:
+                    line.append(imp, style="yellow")
                 label = node["title"] + (" ✓" if node["status"] == "completed" else "")
                 line.append(label)
                 if node["status"] in ("completed", "archived"):
@@ -489,37 +743,42 @@ class GistBrowser(App):
 
     def _update_context(self):
         widget = self.query_one("#context", Static)
+        if not self.show_context:
+            widget.display = False
+            return
+        widget.display = True
         gid = self._current_gist_id()
         node = self._gist_node(gid)
         actions = self._node_actions(gid)
+        body = Text()
         if node:
             parent = self._gist_node(node.get("parentId")) if node.get("parentId") else None
             child_type = CHILD_TYPE.get(node["type"], "free")
             column = self._current_column_state() if self.view_mode == "columns" else None
             scope = column["scope"] if column else "branch"
             sort_mode = self._column_sort_for_depth(self.active_depth)
-            lines = [
-                f"[b]{badge_for(node['type'])}[/b] {node['title']}  [dim]({status_label(node['status'])})[/dim]  view: {self.view_mode}",
-                f"parent: {parent['title'] if parent else 'root'}",
-                f"a -> {badge_for(child_type)} child   A -> {badge_for(node['type'])} sibling   enter -> edit   v -> switch view",
-                "move: "
-                f"{'↑' if actions['can_move_up'] else '·'} "
-                f"{'↓' if actions['can_move_down'] else '·'}   "
-                f"indent: {'yes' if actions['can_indent'] else 'no'}   "
-                f"unindent: {'yes' if actions['can_unindent'] else 'no'}",
-                f"children: {'yes' if actions['has_children'] else 'no'}   open: {actions['open_state']}   scope: {scope}   sort: {sort_mode}",
-                f"archives: {'shown' if self.show_archived else 'hidden'}   width-cols: {self._max_visible_columns()}   status: {self._status_message}",
-            ]
+            imp_val = node.get("importance")
+            imp_str = ("!" * imp_val) if imp_val else "—"
+            due_str = node.get("dueDate") or "—"
+            tags_str = ", ".join(node.get("tags") or []) or "—"
+            cut_hint = "  ✂ cut — p to paste" if self._cut_id else ""
+            mv = f"{'↑' if actions['can_move_up'] else '·'}{'↓' if actions['can_move_down'] else '·'}"
+            body.append(f"{badge_for(node['type'])}  {node['title']}", style="bold")
+            body.append(f"  ({status_label(node['status'])})", style="dim")
+            if cut_hint:
+                body.append(cut_hint, style="yellow")
+            body.append("\n")
+            body.append(f"↳ {parent['title'] if parent else 'root'}", style="dim")
+            body.append(f"   import:{imp_str}  due:{due_str}  tags:{tags_str}  "
+                        f"move:{mv}  scope:{scope}  sort:{sort_mode}", style="dim")
+            body.append("\n")
+            body.append(self._status_message, style="dim italic")
         else:
-            lines = [
-                f"[b]root[/b]  [dim](no node selected)[/dim]  view: {self.view_mode}",
-                "parent: root",
-                "a -> G child   A -> G sibling   enter -> edit   v -> switch view",
-                "move: · ·   indent: no   unindent: no",
-                f"children: no   open: closed   scope: branch   sort: {self._column_sort_for_depth(self.active_depth)}",
-                f"archives: {'shown' if self.show_archived else 'hidden'}   width-cols: {self._max_visible_columns()}   status: {self._status_message}",
-            ]
-        widget.update("\n".join(lines))
+            body.append("no selection", style="dim")
+            body.append(f"\nview:{self.view_mode}", style="dim")
+            body.append("\n")
+            body.append(self._status_message, style="dim italic")
+        widget.update(body)
 
     def _move_columns_selection(self, delta: int):
         column = self._current_column_state()
@@ -734,11 +993,13 @@ class GistBrowser(App):
             return
         self._push_undo()
         node = self._gist_node(gid)
-        node["parentId"] = sibs[idx - 1]["id"]
+        new_parent_id = sibs[idx - 1]["id"]
+        node["parentId"] = new_parent_id
+        node["type"] = self._natural_type(new_parent_id)
         save(self.data)
         self._sync_selection_to_gid(gid)
         self._refresh_view()
-        self._set_status("Indented under previous sibling.")
+        self._set_status(f"Indented → {node['type']}.")
 
     def action_unindent(self):
         gid = self._current_gist_id()
@@ -754,7 +1015,9 @@ class GistBrowser(App):
             self._set_status("Can't unindent without a valid parent.")
             return
         self._push_undo()
-        node["parentId"] = parent.get("parentId")
+        new_parent_id = parent.get("parentId")
+        node["parentId"] = new_parent_id
+        node["type"] = self._natural_type(new_parent_id)
         save(self.data)
         self._sync_selection_to_gid(gid)
         self._refresh_view()
@@ -778,6 +1041,9 @@ class GistBrowser(App):
                 "title": title,
                 "status": "active",
                 "parentId": gid,
+                "importance": None,
+                "dueDate": None,
+                "tags": [],
                 "createdAt": now(),
                 "completedAt": None,
             }
@@ -808,6 +1074,9 @@ class GistBrowser(App):
                 "title": title,
                 "status": "active",
                 "parentId": parent_id,
+                "importance": None,
+                "dueDate": None,
+                "tags": [],
                 "createdAt": now(),
                 "completedAt": None,
             }
@@ -875,6 +1144,140 @@ class GistBrowser(App):
         self._refresh_view()
         self._set_status(f"Archived {title}.")
 
+    def action_toggle_context(self):
+        self.show_context = not self.show_context
+        self._update_context()
+
+    def action_cut(self):
+        gid = self._current_gist_id()
+        if not gid:
+            self._set_status("No node selected.")
+            return
+        node = self._gist_node(gid)
+        self._cut_id = gid
+        self._refresh_view()
+        self._set_status(f"Cut: {node['title']} — navigate to new parent, press p.")
+
+    def action_yank(self):
+        """Copy current node (deep copy — paste re-parents the duplicate)."""
+        import copy as _copy
+        gid = self._current_gist_id()
+        node = self._gist_node(gid)
+        if not node:
+            self._set_status("No node selected.")
+            return
+        self._cut_id = None  # yank replaces any active cut
+        self._yank_node = _copy.deepcopy(node)
+        self._set_status(f"Yanked: {node['title']} — navigate to new parent, press p.")
+
+    def action_paste(self):
+        target_gid = self._current_gist_id()
+        if self._cut_id:
+            if target_gid == self._cut_id:
+                self._set_status("Can't paste a node onto itself.")
+                return
+            node = self._gist_node(self._cut_id)
+            if not node:
+                self._cut_id = None
+                self._set_status("Cut node no longer exists.")
+                return
+            self._push_undo()
+            node["parentId"] = target_gid
+            node["type"] = self._natural_type(target_gid)
+            self._cut_id = None
+            save(self.data)
+            self._sync_selection_to_gid(node["id"])
+        elif self._yank_node:
+            import copy as _copy
+            self._push_undo()
+            dupe = _copy.deepcopy(self._yank_node)
+            dupe["id"] = new_id()
+            dupe["parentId"] = target_gid
+            dupe["type"] = self._natural_type(target_gid)
+            dupe["createdAt"] = now()
+            dupe["completedAt"] = None
+            self.data["nodes"].append(dupe)
+            save(self.data)
+            self._sync_selection_to_gid(dupe["id"])
+        else:
+            self._set_status("Nothing to paste. Press x (cut) or y (yank) first.")
+            return
+        self._refresh_view()
+        target = self._gist_node(target_gid)
+        dest = target["title"] if target else "root"
+        self._set_status(f"Pasted under '{dest}'.")
+
+    def action_edit_tags(self):
+        gid = self._current_gist_id()
+        node = self._gist_node(gid)
+        if not node:
+            self._set_status("No node selected.")
+            return
+        current = ", ".join(node.get("tags") or [])
+
+        async def _do(val: str):
+            self._push_undo()
+            node["tags"] = [t.strip() for t in val.split(",") if t.strip()]
+            save(self.data)
+            self._sync_selection_to_gid(gid)
+            self._refresh_view()
+            label = ", ".join(node["tags"]) or "none"
+            self._set_status(f"Tags: {label}.")
+
+        self.push_screen(InputModal("Tags (comma-separated, blank to clear):", current), _do)
+
+    def action_cycle_importance(self):
+        gid = self._current_gist_id()
+        node = self._gist_node(gid)
+        if not node:
+            self._set_status("No node selected.")
+            return
+        self._push_undo()
+        cur = node.get("importance")
+        node["importance"] = None if cur == 5 else (cur or 0) + 1
+        save(self.data)
+        self._sync_selection_to_gid(gid)
+        self._refresh_view()
+        label = f"{'!' * node['importance']}" if node["importance"] else "none"
+        self._set_status(f"Importance: {label}.")
+
+    def action_set_due(self):
+        gid = self._current_gist_id()
+        node = self._gist_node(gid)
+        if not node:
+            self._set_status("No node selected.")
+            return
+
+        async def _do(val: str):
+            if val == "":
+                self._push_undo()
+                node["dueDate"] = None
+                save(self.data)
+                self._sync_selection_to_gid(gid)
+                self._refresh_view()
+                self._set_status("Due date cleared.")
+                return
+            # accept YYYY, YYYY-MM, or YYYY-MM-DD
+            parts = val.split("-")
+            valid = (
+                len(parts) in (1, 2, 3)
+                and all(p.isdigit() for p in parts)
+                and len(parts[0]) == 4
+                and (len(parts) < 2 or 1 <= int(parts[1]) <= 12)
+                and (len(parts) < 3 or 1 <= int(parts[2]) <= 31)
+            )
+            if not valid:
+                self._set_status(f"Invalid date '{val}' — use YYYY, YYYY-MM, or YYYY-MM-DD.")
+                return
+            self._push_undo()
+            node["dueDate"] = val
+            save(self.data)
+            self._sync_selection_to_gid(gid)
+            self._refresh_view()
+            self._set_status(f"Due: {val}.")
+
+        self.push_screen(InputModal("Due date (YYYY-MM-DD, blank to clear):", node.get("dueDate") or ""), _do)
+
     def action_toggle_level_scope(self):
         if self.view_mode != "columns":
             self._set_status("All-level view is only for columns mode.")
@@ -899,6 +1302,9 @@ class GistBrowser(App):
         idx = SORT_OPTIONS.index(current)
         new_value = SORT_OPTIONS[(idx + 1) % len(SORT_OPTIONS)]
         self.column_sort[self.active_depth] = new_value
+        prefs = _load_prefs()
+        prefs["column_sort"] = {str(k): v for k, v in self.column_sort.items()}
+        _save_prefs(prefs)
         self._refresh_view()
         self._set_status(f"Sorting current column by {new_value}.")
 
@@ -907,6 +1313,9 @@ class GistBrowser(App):
         self.view_mode = "columns" if self.view_mode == "tree" else "tree"
         if gid:
             self._sync_selection_to_gid(gid)
+        prefs = _load_prefs()
+        prefs["view_mode"] = self.view_mode
+        _save_prefs(prefs)
         self._refresh_view()
         self._set_status(f"Switched to {self.view_mode} view.")
 
@@ -933,6 +1342,46 @@ class GistBrowser(App):
         save(self.data)
         self._refresh_view()
         self._set_status("Undid last change.")
+
+    def on_unmount(self):
+        prefs = _load_prefs()
+        prefs["expanded_ids"] = list(self.expanded_ids)
+        _save_prefs(prefs)
+
+    def action_space_launch(self):
+        async def _on_result(cmd):
+            if cmd:
+                await self._handle_launch(cmd)
+        self.push_screen(SpaceLauncher(), _on_result)
+
+    def action_ex_mode(self):
+        async def _on_result(raw):
+            if not raw:
+                return
+            cmd = EX_ALIASES.get(raw.lower(), raw)
+            await self._handle_launch(cmd)
+        self.push_screen(ExMode(), _on_result)
+
+    async def _handle_launch(self, cmd: str):
+        if cmd == "__quit__":
+            self.exit()
+        elif cmd == "__prefs__":
+            editor = os.environ.get("VISUAL") or os.environ.get("EDITOR", "nano")
+            with self.suspend():
+                subprocess.run([editor, str(PREFS)])
+            prefs = _load_prefs()
+            self.column_sort = {int(k): v for k, v in prefs.get("column_sort", {}).items()}
+            self._refresh_view()
+            self._set_status("Prefs reloaded.")
+        else:
+            with self.suspend():
+                subprocess.run(["claude", f"/{cmd}"])
+            self.data = load()
+            self._refresh_view()
+            self._set_status(f"Returned from {cmd}.")
+
+    def action_help(self):
+        self.push_screen(HelpModal())
 
     def on_key(self, event: events.Key):
         if event.key != "g":

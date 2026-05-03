@@ -32,8 +32,11 @@ node = {
     "title": "$TITLE",
     "status": "active",
     "parentId": None if "$PARENT_ID" == "null" else "$PARENT_ID",
+    "importance": None,
+    "dueDate": None,
+    "tags": [],
     "createdAt": "$NOW",
-    "completedAt": None
+    "completedAt": None,
 }
 
 data["nodes"].append(node)
