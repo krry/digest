@@ -22,6 +22,7 @@ The design is intentionally lightweight. Preserve that unless asked otherwise.
 - `goals.json`: primary node store
 - `values.json`: values store
 - `checkins.json`: optional local check-in history file
+- `prefs.json`: user preferences (theme, view mode, sort, expanded nodes)
 - `*.json.example`: committed blank datastore templates
 
 ## Data Model
@@ -44,10 +45,17 @@ Each node currently looks like:
   "title": "string",
   "status": "active | completed | archived",
   "parentId": null,
+  "importance": null,
+  "dueDate": null,
+  "tags": [],
   "createdAt": "UTC ISO-8601",
   "completedAt": null
 }
 ```
+
+- `importance`: integer 1–5 or null (1 = lowest, 5 = highest)
+- `dueDate`: ISO-8601 partial date — `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`
+- `tags`: array of strings
 
 Hierarchy convention:
 
@@ -66,11 +74,21 @@ Hierarchy convention:
 
 The TUI is a single-file Textual app with:
 
-- Vim-style movement bindings
-- Modal text input for add/rename
+- Two views: **column browser** (default, Miller-columns style) and **tree view** (fully expanded by default)
+- Vim-style movement bindings (`j`/`k`, `h`/`l` or arrows)
+- Modal text input for add/rename/tags/due-date
 - In-memory undo stack
 - Rebuild-based tree refresh after mutations
-- Archived items hidden from the TUI tree
+- Archived items hidden from both views
+- **Context panel** (toggle `c`): title/status, parent/metadata, last-action line
+- **Sort**: cycle column sort with `s`; modes: manual, title, created, status, completed, importance, due; sort indicator shown in panel title
+- **Importance**: cycle 1–5 with `i`; displayed as `!` glyphs
+- **Cut/yank/paste**: `x` cuts, `y` yanks, `p` pastes; moved/duplicated nodes auto-retype to natural hierarchy type
+- **Auto-retype**: moving a node (indent/unindent/paste) sets its `type` to the natural child type of the new parent (`goal→idea→step→task→free`)
+- **Themes**: system light/dark responsive; separate defaults for each mode; chosen theme remembered in `prefs.json`
+- **Space launcher** (`<space>`): modal to launch Claude skills from within the TUI
+- **Ex-mode** (`:`): command line for aliases like `show`, `checkin`, `prefs`, `q`
+- `prefs.json` persists: theme per mode, view mode, column sort per column, expanded node IDs
 
 When editing the TUI, keep the interaction model fast and obvious. Avoid over-engineering.
 
