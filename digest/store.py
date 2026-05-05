@@ -167,8 +167,10 @@ class DigestStore:
         values: dict[str, Any],
         checkins: dict[str, Any],
     ):
+        conn.execute("pragma foreign_keys = off")
         conn.execute("delete from node_order")
         conn.execute("delete from nodes")
+        conn.execute("pragma foreign_keys = on")
         conn.execute("delete from values_items")
         conn.execute("delete from values_meta")
         conn.execute("delete from checkins")
@@ -252,21 +254,23 @@ class DigestStore:
             (parent_id, parent_id),
         ).fetchall()
 
+    def _row_to_node(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "type": row["type"],
+            "title": row["title"],
+            "status": row["status"],
+            "parentId": row["parent_id"],
+            "importance": row["importance"],
+            "dueDate": row["due_date"],
+            "tags": json.loads(row["tags_json"]),
+            "createdAt": row["created_at"],
+            "completedAt": row["completed_at"],
+        }
+
     def _export_nodes_preorder(self, conn: sqlite3.Connection, parent_id: str | None, out: list[dict[str, Any]]):
         for row in self._ordered_nodes(conn, parent_id):
-            node = {
-                "id": row["id"],
-                "type": row["type"],
-                "title": row["title"],
-                "status": row["status"],
-                "parentId": row["parent_id"],
-                "importance": row["importance"],
-                "dueDate": row["due_date"],
-                "tags": json.loads(row["tags_json"]),
-                "createdAt": row["created_at"],
-                "completedAt": row["completed_at"],
-            }
-            out.append(node)
+            out.append(self._row_to_node(row))
             self._export_nodes_preorder(conn, row["id"], out)
 
     def load_goals_data(self) -> dict[str, Any]:
@@ -373,7 +377,10 @@ class DigestStore:
         return node
 
     def get_node(self, node_id: str) -> dict[str, Any] | None:
-        return next((node for node in self.load_goals_data()["nodes"] if node["id"] == node_id), None)
+        self.ensure_ready()
+        with self.connect() as conn:
+            row = conn.execute("select * from nodes where id = ?", (node_id,)).fetchone()
+        return self._row_to_node(row) if row else None
 
     def rename_node(self, node_id: str, title: str) -> dict[str, Any] | None:
         goals = self.load_goals_data()
@@ -395,12 +402,13 @@ class DigestStore:
         return None
 
     def find_active_matches(self, query: str) -> list[dict[str, Any]]:
-        needle = query.casefold()
-        return [
-            node
-            for node in self.load_goals_data()["nodes"]
-            if node["status"] == "active" and needle in node["title"].casefold()
-        ]
+        self.ensure_ready()
+        with self.connect() as conn:
+            rows = conn.execute(
+                "select * from nodes where status = 'active' and lower(title) like lower(?)",
+                (f"%{query}%",),
+            ).fetchall()
+        return [self._row_to_node(row) for row in rows]
 
     def recent_checkin_date(self) -> str | None:
         self.ensure_ready()

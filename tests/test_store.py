@@ -26,3 +26,38 @@ def populated(store: DigestStore) -> tuple[DigestStore, dict, dict, dict]:
     idea = store.add_node("idea", goal["id"], "Idea B")
     step = store.add_node("step", idea["id"], "Step C")
     return store, goal, idea, step
+
+
+def test_get_node_returns_correct_node(populated):
+    store, goal, idea, step = populated
+    result = store.get_node(goal["id"])
+    assert result is not None
+    assert result["id"] == goal["id"]
+    assert result["type"] == "goal"
+    assert result["title"] == "Goal A"
+    assert result["parentId"] is None
+
+
+def test_get_node_returns_none_for_missing(store):
+    assert store.get_node("nonexistent") is None
+
+
+def test_find_active_matches_filters_by_title(populated):
+    store, goal, idea, step = populated
+    results = store.find_active_matches("idea")
+    assert len(results) == 1
+    assert results[0]["id"] == idea["id"]
+
+
+def test_find_active_matches_excludes_completed(populated):
+    store, goal, idea, step = populated
+    store.set_node_status(idea["id"], "completed")
+    results = store.find_active_matches("idea")
+    assert results == []
+
+
+def test_find_active_matches_case_insensitive(populated):
+    store, goal, idea, step = populated
+    results = store.find_active_matches("GOAL")
+    assert len(results) == 1
+    assert results[0]["id"] == goal["id"]
