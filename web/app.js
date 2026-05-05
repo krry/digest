@@ -22,6 +22,9 @@ const state = {
   detail: "Loading cached state.",
 };
 
+let syncInFlight = false;
+let retryTimer = null;
+
 const els = {
   statusPill: document.querySelector("#status-pill"),
   statusDetail: document.querySelector("#status-detail"),
@@ -90,8 +93,8 @@ function visibleNodes() {
     const focus = nodeById(focusId);
     const type = childType(focus?.type);
     return state.nodes
-      .filter((node, index) => node.type === type && node.status !== "archived")
-      .map((node) => ({ ...node, sortIndex: index }));
+      .filter((node) => node.type === type && node.status !== "archived")
+      .map((node, index) => ({ ...node, sortIndex: index }));
   }
   return childrenOf(focusId);
 }
@@ -157,10 +160,10 @@ function renderFocusCard() {
   els.focusCard.innerHTML = `
     <div class="focus-meta">
       <span>${badgeFor(node.type)}</span>
-      <span>${node.status}</span>
+      <span>${escapeHtml(node.status)}</span>
       <span>${childrenOf(node.id).length} children</span>
     </div>
-    <h2 class="focus-title">${node.title}</h2>
+    <h2 class="focus-title">${escapeHtml(node.title)}</h2>
   `;
 }
 
@@ -205,11 +208,7 @@ function renderList() {
       if (!node) return;
       const title = window.prompt("Rename node", node.title)?.trim();
       if (!title) return;
-      await queueMutation({
-        type: "rename-node",
-        nodeId: id,
-        title,
-      });
+      await queueMutation({ id: generateId(), type: "rename-node", nodeId: id, title });
     });
   });
 
@@ -217,7 +216,7 @@ function renderList() {
     button.addEventListener("click", async () => {
       const id = button.getAttribute("data-complete");
       if (!id) return;
-      await queueMutation({ type: "complete-node", nodeId: id });
+      await queueMutation({ id: generateId(), type: "complete-node", nodeId: id });
     });
   });
 
@@ -225,7 +224,7 @@ function renderList() {
     button.addEventListener("click", async () => {
       const id = button.getAttribute("data-archive");
       if (!id) return;
-      await queueMutation({ type: "archive-node", nodeId: id });
+      await queueMutation({ id: generateId(), type: "archive-node", nodeId: id });
     });
   });
 }
@@ -402,6 +401,8 @@ async function replayMutation(mutation) {
 }
 
 async function syncIfPossible() {
+  if (syncInFlight) return;
+  syncInFlight = true;
   try {
     setStatus("syncing", "Trying the host.");
     if (state.pendingMutations.length) {
@@ -418,7 +419,16 @@ async function syncIfPossible() {
       navigator.onLine ? "Working locally until the tailnet comes back." : "You are offline. Changes stay on this device."
     );
     await saveState(snapshotState());
+  } finally {
+    syncInFlight = false;
   }
+}
+
+function maybeSyncSoon() {
+  if (retryTimer) window.clearTimeout(retryTimer);
+  retryTimer = window.setTimeout(() => {
+    syncIfPossible();
+  }, 300);
 }
 
 function escapeHtml(text) {
@@ -430,15 +440,22 @@ function escapeHtml(text) {
 }
 
 async function boot() {
-  const cached = await loadState();
-  if (cached) {
-    Object.assign(state, cached);
-    setStatus("cached", "Loaded local state.");
-    render();
-  } else {
+  try {
+    const cached = await loadState();
+    if (cached) {
+      Object.assign(state, cached);
+      setStatus("cached", "Loaded local state.");
+      render();
+    } else {
+      setStatus("starting", "No cached state yet.");
+      render();
+    }
+    await syncIfPossible();
+  } catch (error) {
+    console.error("Digest boot failed", error);
+    setStatus("error", `Startup failed: ${error?.message || "unknown error"}`);
     render();
   }
-  await syncIfPossible();
 }
 
 els.composer.addEventListener("submit", async (event) => {
@@ -474,11 +491,21 @@ els.sortSelect.addEventListener("change", async () => {
 });
 els.composerMode.addEventListener("change", composerPlaceholder);
 
-window.addEventListener("online", syncIfPossible);
+window.addEventListener("online", maybeSyncSoon);
+window.addEventListener("focus", maybeSyncSoon);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") maybeSyncSoon();
+});
 window.addEventListener("offline", async () => {
   setStatus("offline", "You are offline. Changes stay on this device.");
   await saveState(snapshotState());
 });
+
+window.setInterval(() => {
+  if (state.pendingMutations.length || state.status === "host unreachable") {
+    syncIfPossible();
+  }
+}, 15000);
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
