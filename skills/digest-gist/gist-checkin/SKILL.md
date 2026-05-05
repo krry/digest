@@ -37,21 +37,11 @@ Name what you hear. If action is needed, say it clearly:
 
 ### 4. Write the record
 
-```python
-python3 - <<'EOF'
-import json, datetime, pathlib
-
-path = pathlib.Path.home() / "gist/checkins.json"
-data = json.loads(path.read_text()) if path.exists() else {"version": 1, "checkins": []}
-data["checkins"].append({
-    "date": datetime.date.today().isoformat(),
-    "question": "<the question you asked>",
-    "response": "<one-sentence summary>",
-    "adjustment": "<adjustment key>"
-})
-path.write_text(json.dumps(data, indent=2))
-print("logged")
-EOF
+```bash
+~/gist/bin/log-checkin.sh \
+  --question "<the question you asked>" \
+  --response "<one-sentence summary>" \
+  --adjustment "<adjustment key>"
 ```
 
 ### 5. Close

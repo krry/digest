@@ -17,4 +17,4 @@ Then run the script and display its output verbatim:
 ~/gist/bin/show.sh [all]
 ```
 
-Pass `all` if Chef asked to see archived items.
+Pass `all` if Chef asked to see archived items. This script reads from the canonical SQLite store.

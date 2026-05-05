@@ -1,6 +1,6 @@
 ---
 name: gist-onboard
-description: Use when Chef wants to establish or revisit their core values. Runs a reflective conversation and writes ~/gist/values.json.
+description: Use when Chef wants to establish or revisit their core values. Runs a reflective conversation and writes the canonical digest store via ~/gist/bin/write-values.sh.
 ---
 
 # GIST Onboard

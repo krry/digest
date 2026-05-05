@@ -19,3 +19,5 @@ Handle output:
 - **`DONE: <title>`** → print `✓ <title>`
 - **`MATCHES:\n...`** → show list, ask which, re-run with exact title
 - **`NONE`** → say nothing matched, run `~/gist/bin/show.sh` so Chef can see active nodes
+
+This script updates the canonical SQLite store.

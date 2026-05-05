@@ -2,4 +2,5 @@
 goals.json
 values.json
 checkins.json
+digest.db
 bin/__pycache__/

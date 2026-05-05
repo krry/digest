@@ -5,7 +5,7 @@
 This project is a small personal GIST todo app:
 
 - Python Textual TUI for interactive editing and navigation
-- JSON backend stored in local files
+- SQLite canonical store with mirrored JSON export files
 - Small shell scripts for common actions and skill integration
 
 The design is intentionally lightweight. Preserve that unless asked otherwise.
@@ -19,15 +19,17 @@ The design is intentionally lightweight. Preserve that unless asked otherwise.
 - `bin/done.sh`: fuzzy-match and complete a node
 - `bin/write-values.sh`: overwrite `values.json` from stdin JSON
 - `bin/checkin-status.sh`: check monthly check-in throttle and print context
+- `bin/log-checkin.sh`: append a check-in record
 - `goals.json`: primary node store
 - `values.json`: values store
 - `checkins.json`: optional local check-in history file
+- `digest.db`: canonical local datastore
 - `prefs.json`: user preferences (theme, view mode, sort, expanded nodes)
 - `*.json.example`: committed blank datastore templates
 
 ## Data Model
 
-`goals.json` uses:
+Canonical storage lives in `digest.db`. JSON mirrors still use:
 
 ```json
 {
@@ -66,7 +68,8 @@ Hierarchy convention:
 - Python is used only where it buys clarity; keep it small and direct.
 - Shell scripts use `set -euo pipefail`.
 - `jq` is used for JSON reads in shell.
-- JSON writes are done with inline Python in shell scripts and directly in the TUI app.
+- shared datastore behavior lives in `digest/`
+- JSON mirrors are export/compatibility artifacts, not the source of truth
 - Timestamps are UTC ISO-8601 with a trailing `Z`.
 - Naming is straightforward: snake_case, small helpers, minimal abstraction.
 
@@ -111,7 +114,9 @@ Those skills assume the local scripts in `bin/` remain stable. If you change scr
 ## Bootstrap
 
 - Run `./bin/init.sh` after cloning to create local datastore files from committed `.example` templates.
+- `./bin/init.sh` also bootstraps `digest.db`.
 - Live data files (`goals.json`, `values.json`, `checkins.json`) are ignored and should not be committed.
+- `digest.db` is also ignored and should not be committed.
 - Scripts and the TUI should still handle missing files gracefully, but `bin/init.sh` is the primary setup path.
 
 ## Commands
@@ -125,17 +130,18 @@ Use these when working on the project:
 - `./bin/add.sh <type> <parentId|null> "<title>"`
 - `./bin/done.sh <search terms>`
 - `./bin/checkin-status.sh [force]`
+- `./bin/log-checkin.sh --question "..." --response "..." --adjustment "..." [--date YYYY-MM-DD]`
 - `echo '[{"phrase":"...","pinnedMoment":"..."}]' | ./bin/write-values.sh`
+- `PYTHONPATH=. python3 -m digest.cli export-json`
 - `python3 -m py_compile bin/gist-tui`
 
 ## Change Guidelines
 
-- Keep the project local-first and file-backed.
+- Keep the project local-first and single-user.
 - Prefer small, legible edits over new architecture.
-- Do not introduce a database, packaging layer, or framework sprawl unless explicitly requested.
-- Be careful with live JSON files in the repo root; they are user data, not fixtures.
-- Do not commit live JSON data; commit only the `.example` templates.
-- If you change storage shape, update all readers/writers together.
+- Be careful with `digest.db` and the live JSON mirrors in the repo root; they are user data, not fixtures.
+- Do not commit live SQLite or JSON data; commit only the `.example` templates.
+- If you change storage shape, update the shared core, scripts, and skill docs together.
 - If you change script UX or output, verify the related skill still makes sense.
 
 ## Verification

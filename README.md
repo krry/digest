@@ -2,7 +2,7 @@
 
 A tiny personal goals-and-todos app.
 
-It lives in the terminal, uses [Textual](https://textual.textualize.io/) for the TUI, and stores everything in local JSON files.
+It lives in the terminal, uses [Textual](https://textual.textualize.io/) for the TUI, and now keeps its canonical data in a local SQLite database while exporting JSON mirrors for portability and scripts.
 
 ## Setup
 
@@ -11,6 +11,7 @@ It lives in the terminal, uses [Textual](https://textual.textualize.io/) for the
 ```
 
 Creates local data files from committed examples and links the repo-owned GIST skills into `~/.codex/skills` and `~/.claude/skills`. Your actual data stays untracked.
+It also bootstraps `digest.db`, the canonical local datastore.
 
 ## Use it
 
@@ -19,6 +20,12 @@ Creates local data files from committed examples and links the repo-owned GIST s
 ./bin/show.sh         # print the current tree
 ./bin/show.sh all     # include archived items
 ```
+
+## Storage
+
+- `digest.db` is the canonical local datastore
+- `goals.json`, `values.json`, and `checkins.json` are mirrored export files
+- the shell scripts and TUI should be treated as the public interface, not direct file edits
 
 ## TUI — key bindings
 

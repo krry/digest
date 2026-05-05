@@ -1,0 +1,2 @@
+"""Digest shared core."""
+

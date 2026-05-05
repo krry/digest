@@ -36,7 +36,7 @@ Fuzzy-match Chef's description against the tree. If multiple candidates, ask whi
 ~/gist/bin/add.sh <type> <parentId|null> "<title>"
 ```
 
-Script prints the new node's ID.
+Script writes to the canonical SQLite store and prints the new node's ID.
 
 ### 4. Confirm
 

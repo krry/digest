@@ -8,6 +8,7 @@ import os
 import pathlib
 import secrets
 import subprocess
+import sys
 import warnings
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*GIL.*")
@@ -24,8 +25,14 @@ from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, Label, Static
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from digest.store import DigestStore
+
 DATA = ROOT / "goals.json"
 PREFS = ROOT / "prefs.json"
+STORE = DigestStore()
 
 LIGHT_THEMES = {
     "ansi-light", "atom-one-light", "catppuccin-latte",
@@ -92,15 +99,12 @@ def due_label(node: dict) -> str:
 
 
 def load() -> dict:
-    if DATA.exists():
-        return json.loads(DATA.read_text())
-    save(DEFAULT_DATA)
-    return dict(DEFAULT_DATA)
+    STORE.ensure_ready()
+    return STORE.load_goals_data()
 
 
 def save(data: dict):
-    DATA.parent.mkdir(parents=True, exist_ok=True)
-    DATA.write_text(json.dumps(data, indent=2))
+    STORE.import_snapshot(data)
 
 
 def new_id() -> str:
@@ -108,7 +112,7 @@ def new_id() -> str:
 
 
 def now() -> str:
-    return datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")
+    return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def badge_for(node_type: str) -> str:

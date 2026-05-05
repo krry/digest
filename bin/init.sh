@@ -55,6 +55,17 @@ init_file "goals.json"
 init_file "values.json"
 init_file "checkins.json"
 
+if [[ -f "$ROOT_DIR/digest.db" ]]; then
+  echo "exists: digest.db"
+  skipped=$((skipped + 1))
+else
+  PYTHONPATH="$ROOT_DIR" python3 -m digest.cli init >/dev/null
+  echo "created: digest.db"
+  created=$((created + 1))
+fi
+
+PYTHONPATH="$ROOT_DIR" python3 -m digest.cli export-json >/dev/null
+
 for name in gist-show gist-add gist-done gist-checkin gist-onboard; do
   link_skill "$name" "$HOME/.codex/skills/digest-gist/$name/SKILL.md"
   link_skill "$name" "$HOME/.claude/skills/$name/SKILL.md"
