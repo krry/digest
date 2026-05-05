@@ -426,6 +426,42 @@ class DigestStore:
         self.export_json_mirror()
         return self._row_to_node(row)
 
+    def set_importance(self, node_id: str, importance: int | None) -> dict[str, Any] | None:
+        self.ensure_ready()
+        with self.connect() as conn:
+            conn.execute("update nodes set importance = ? where id = ?", (importance, node_id))
+            conn.commit()
+            row = conn.execute("select * from nodes where id = ?", (node_id,)).fetchone()
+        if not row:
+            return None
+        self.export_json_mirror()
+        return self._row_to_node(row)
+
+    def set_due_date(self, node_id: str, due_date: str | None) -> dict[str, Any] | None:
+        self.ensure_ready()
+        with self.connect() as conn:
+            conn.execute("update nodes set due_date = ? where id = ?", (due_date, node_id))
+            conn.commit()
+            row = conn.execute("select * from nodes where id = ?", (node_id,)).fetchone()
+        if not row:
+            return None
+        self.export_json_mirror()
+        return self._row_to_node(row)
+
+    def set_tags(self, node_id: str, tags: list[str]) -> dict[str, Any] | None:
+        self.ensure_ready()
+        with self.connect() as conn:
+            conn.execute(
+                "update nodes set tags_json = ? where id = ?",
+                (json.dumps(tags), node_id),
+            )
+            conn.commit()
+            row = conn.execute("select * from nodes where id = ?", (node_id,)).fetchone()
+        if not row:
+            return None
+        self.export_json_mirror()
+        return self._row_to_node(row)
+
     def find_active_matches(self, query: str) -> list[dict[str, Any]]:
         self.ensure_ready()
         with self.connect() as conn:

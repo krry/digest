@@ -117,3 +117,49 @@ def test_json_mirror_reflects_rename(populated):
     goals = json.loads(store.goals_path.read_text())
     titles = [n["title"] for n in goals["nodes"]]
     assert "Mirror Test" in titles
+
+
+def test_set_importance(populated):
+    store, goal, idea, step = populated
+    result = store.set_importance(goal["id"], 3)
+    assert result["importance"] == 3
+    assert store.get_node(goal["id"])["importance"] == 3
+
+
+def test_set_importance_clear(populated):
+    store, goal, idea, step = populated
+    store.set_importance(goal["id"], 3)
+    result = store.set_importance(goal["id"], None)
+    assert result["importance"] is None
+
+
+def test_set_importance_returns_none_for_missing(store):
+    assert store.set_importance("nonexistent", 3) is None
+
+
+def test_set_due_date(populated):
+    store, goal, idea, step = populated
+    result = store.set_due_date(goal["id"], "2026-12")
+    assert result["dueDate"] == "2026-12"
+    assert store.get_node(goal["id"])["dueDate"] == "2026-12"
+
+
+def test_set_due_date_clear(populated):
+    store, goal, idea, step = populated
+    store.set_due_date(goal["id"], "2026-12")
+    result = store.set_due_date(goal["id"], None)
+    assert result["dueDate"] is None
+
+
+def test_set_tags(populated):
+    store, goal, idea, step = populated
+    result = store.set_tags(goal["id"], ["focus", "health"])
+    assert result["tags"] == ["focus", "health"]
+    assert store.get_node(goal["id"])["tags"] == ["focus", "health"]
+
+
+def test_set_tags_empty(populated):
+    store, goal, idea, step = populated
+    store.set_tags(goal["id"], ["focus"])
+    result = store.set_tags(goal["id"], [])
+    assert result["tags"] == []
