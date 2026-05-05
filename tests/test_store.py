@@ -163,3 +163,35 @@ def test_set_tags_empty(populated):
     store.set_tags(goal["id"], ["focus"])
     result = store.set_tags(goal["id"], [])
     assert result["tags"] == []
+
+
+def test_move_down_changes_order(populated):
+    store, goal, idea, step = populated
+    idea2 = store.add_node("idea", goal["id"], "Idea B2")
+    store.move_down(idea["id"])
+    children = [n["id"] for n in store.load_goals_data()["nodes"] if n["parentId"] == goal["id"]]
+    assert children == [idea2["id"], idea["id"]]
+
+
+def test_move_up_changes_order(populated):
+    store, goal, idea, step = populated
+    idea2 = store.add_node("idea", goal["id"], "Idea B2")
+    store.move_up(idea2["id"])
+    children = [n["id"] for n in store.load_goals_data()["nodes"] if n["parentId"] == goal["id"]]
+    assert children == [idea2["id"], idea["id"]]
+
+
+def test_move_up_noop_at_top(populated):
+    store, goal, idea, step = populated
+    store.add_node("idea", goal["id"], "Idea B2")
+    store.move_up(idea["id"])
+    children = [n["id"] for n in store.load_goals_data()["nodes"] if n["parentId"] == goal["id"]]
+    assert children[0] == idea["id"]
+
+
+def test_move_down_noop_at_bottom(populated):
+    store, goal, idea, step = populated
+    idea2 = store.add_node("idea", goal["id"], "Idea B2")
+    store.move_down(idea2["id"])
+    children = [n["id"] for n in store.load_goals_data()["nodes"] if n["parentId"] == goal["id"]]
+    assert children[-1] == idea2["id"]

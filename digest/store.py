@@ -462,6 +462,64 @@ class DigestStore:
         self.export_json_mirror()
         return self._row_to_node(row)
 
+    def move_up(self, node_id: str) -> None:
+        self.ensure_ready()
+        with self.connect() as conn:
+            current = conn.execute(
+                "select parent_id, sort_index from node_order where node_id = ?", (node_id,)
+            ).fetchone()
+            if not current:
+                return
+            prev = conn.execute(
+                """
+                select node_id, sort_index from node_order
+                where parent_id is ? and sort_index < ?
+                order by sort_index desc limit 1
+                """,
+                (current["parent_id"], current["sort_index"]),
+            ).fetchone()
+            if not prev:
+                return
+            conn.execute(
+                "update node_order set sort_index = ? where node_id = ?",
+                (prev["sort_index"], node_id),
+            )
+            conn.execute(
+                "update node_order set sort_index = ? where node_id = ?",
+                (current["sort_index"], prev["node_id"]),
+            )
+            conn.commit()
+        self.export_json_mirror()
+
+    def move_down(self, node_id: str) -> None:
+        self.ensure_ready()
+        with self.connect() as conn:
+            current = conn.execute(
+                "select parent_id, sort_index from node_order where node_id = ?", (node_id,)
+            ).fetchone()
+            if not current:
+                return
+            nxt = conn.execute(
+                """
+                select node_id, sort_index from node_order
+                where parent_id is ? and sort_index > ?
+                order by sort_index asc limit 1
+                """,
+                (current["parent_id"], current["sort_index"]),
+            ).fetchone()
+            if not nxt:
+                return
+            conn.execute(
+                "update node_order set sort_index = ? where node_id = ?",
+                (nxt["sort_index"], node_id),
+            )
+            conn.execute(
+                "update node_order set sort_index = ? where node_id = ?",
+                (current["sort_index"], nxt["node_id"]),
+            )
+            conn.commit()
+        self.export_json_mirror()
+
     def find_active_matches(self, query: str) -> list[dict[str, Any]]:
         self.ensure_ready()
         with self.connect() as conn:
