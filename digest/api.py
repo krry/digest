@@ -4,6 +4,7 @@ import argparse
 import json
 import mimetypes
 import pathlib
+import socket
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -18,19 +19,16 @@ def _json_bytes(payload: object) -> bytes:
     return json.dumps(payload, indent=2).encode("utf-8")
 
 
+ALLOWED_EXTENSIONS = {".html", ".css", ".js", ".webmanifest", ".png", ".svg", ".ico"}
+
+
 def _serve_web_path(path: str) -> pathlib.Path | None:
-    mapping = {
-        "/": "index.html",
-        "/styles.css": "styles.css",
-        "/app.js": "app.js",
-        "/db.js": "db.js",
-        "/sw.js": "sw.js",
-        "/manifest.webmanifest": "manifest.webmanifest",
-    }
-    filename = mapping.get(path)
-    if not filename:
+    name = "index.html" if path == "/" else path.lstrip("/")
+    target = (WEB_ROOT / name).resolve()
+    if not str(target).startswith(str(WEB_ROOT)):
         return None
-    target = WEB_ROOT / filename
+    if target.suffix not in ALLOWED_EXTENSIONS:
+        return None
     return target if target.exists() else None
 
 
@@ -146,6 +144,44 @@ class DigestHandler(BaseHTTPRequestHandler):
                 store.append_checkin(payload)
                 return self._send_json({"ok": True})
 
+            if parsed.path == "/api/v1/commands/set-importance":
+                node = store.set_importance(payload["nodeId"], payload.get("importance"))
+                if not node:
+                    return self._send_json({"ok": False, "error": "Node not found"}, status=HTTPStatus.NOT_FOUND)
+                return self._send_json({"ok": True, "node": node})
+
+            if parsed.path == "/api/v1/commands/set-due-date":
+                node = store.set_due_date(payload["nodeId"], payload.get("dueDate"))
+                if not node:
+                    return self._send_json({"ok": False, "error": "Node not found"}, status=HTTPStatus.NOT_FOUND)
+                return self._send_json({"ok": True, "node": node})
+
+            if parsed.path == "/api/v1/commands/set-tags":
+                node = store.set_tags(payload["nodeId"], payload.get("tags", []))
+                if not node:
+                    return self._send_json({"ok": False, "error": "Node not found"}, status=HTTPStatus.NOT_FOUND)
+                return self._send_json({"ok": True, "node": node})
+
+            if parsed.path == "/api/v1/commands/move-node-up":
+                if not store.get_node(payload["nodeId"]):
+                    return self._send_json({"ok": False, "error": "Node not found"}, status=HTTPStatus.NOT_FOUND)
+                store.move_up(payload["nodeId"])
+                return self._send_json({"ok": True, "node": store.get_node(payload["nodeId"])})
+
+            if parsed.path == "/api/v1/commands/move-node-down":
+                if not store.get_node(payload["nodeId"]):
+                    return self._send_json({"ok": False, "error": "Node not found"}, status=HTTPStatus.NOT_FOUND)
+                store.move_down(payload["nodeId"])
+                return self._send_json({"ok": True, "node": store.get_node(payload["nodeId"])})
+
+            if parsed.path == "/api/v1/commands/indent-node":
+                node = store.indent(payload["nodeId"])
+                return self._send_json({"ok": True, "node": node})
+
+            if parsed.path == "/api/v1/commands/unindent-node":
+                node = store.unindent(payload["nodeId"])
+                return self._send_json({"ok": True, "node": node})
+
             if parsed.path == "/api/v1/sync/push":
                 accepted = [mutation.get("clientMutationId") for mutation in payload.get("mutations", [])]
                 return self._send_json(
@@ -157,6 +193,8 @@ class DigestHandler(BaseHTTPRequestHandler):
                 )
         except KeyError as exc:
             return self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+        except ValueError as exc:
+            return self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             return self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
@@ -192,12 +230,40 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="digest.api")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8787, type=int)
+    parser.add_argument("--no-next-free", action="store_true")
     return parser
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8787):
+def _bind_server(host: str, port: int) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer((host, port), DigestHandler)
+
+
+def _find_next_free_port(host: str, starting_port: int, attempts: int = 20) -> int:
+    for port in range(starting_port, starting_port + attempts):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind((host, port))
+                return port
+            except OSError:
+                continue
+    raise OSError(f"No free port found in range {starting_port}-{starting_port + attempts - 1}")
+
+
+def run_server(host: str = "127.0.0.1", port: int = 8787, next_free: bool = True):
     store.ensure_ready()
-    server = ThreadingHTTPServer((host, port), DigestHandler)
+    try:
+        server = _bind_server(host, port)
+    except OSError as exc:
+        if next_free and getattr(exc, "errno", None) == 48:
+            port = _find_next_free_port(host, port + 1)
+            server = _bind_server(host, port)
+        else:
+            raise SystemExit(
+                f"Port {port} is already in use on {host}. "
+                f"Stop the other process or run with --port <n> or --next-free."
+            ) from exc
+    print(f"Digest server listening on http://{host}:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -208,7 +274,7 @@ def run_server(host: str = "127.0.0.1", port: int = 8787):
 
 def main(argv: list[str] | None = None):
     args = build_parser().parse_args(argv)
-    run_server(host=args.host, port=args.port)
+    run_server(host=args.host, port=args.port, next_free=not args.no_next_free)
 
 
 if __name__ == "__main__":
