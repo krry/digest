@@ -336,16 +336,28 @@ class DigestStore:
         self.export_json_mirror()
 
     def bootstrap_payload(self) -> dict[str, Any]:
+        ts = now_utc()
+        goals = self.load_goals_data()
+        values = self.load_values_data()
+        checkins = self.load_checkins_data()
+        with self.connect() as conn:
+            order_rows = conn.execute(
+                "select node_id, parent_id, sort_index from node_order order by parent_id, sort_index"
+            ).fetchall()
+        node_order = [
+            {"nodeId": r["node_id"], "parentId": r["parent_id"], "sortIndex": r["sort_index"]}
+            for r in order_rows
+        ]
         return {
-            "serverTime": now_utc(),
-            "nodes": self.load_goals_data()["nodes"],
-            "nodeOrder": [],
+            "serverTime": ts,
+            "nodes": goals["nodes"],
+            "nodeOrder": node_order,
             "values": {
-                "establishedAt": self.load_values_data()["establishedAt"],
-                "items": self.load_values_data()["values"],
+                "establishedAt": values["establishedAt"],
+                "items": values["values"],
             },
-            "checkins": self.load_checkins_data()["checkins"],
-            "syncCursor": now_utc(),
+            "checkins": checkins["checkins"],
+            "syncCursor": ts,
         }
 
     def add_node(
@@ -355,26 +367,32 @@ class DigestStore:
         title: str,
         node_id: str | None = None,
     ) -> dict[str, Any]:
-        goals = self.load_goals_data()
-        if node_id:
-            existing = next((node for node in goals["nodes"] if node["id"] == node_id), None)
+        self.ensure_ready()
+        _id = node_id or new_id()
+        with self.connect() as conn:
+            existing = conn.execute("select * from nodes where id = ?", (_id,)).fetchone()
             if existing:
-                return existing
-        node = {
-            "id": node_id or new_id(),
-            "type": node_type,
-            "title": title,
-            "status": "active",
-            "parentId": parent_id,
-            "importance": None,
-            "dueDate": None,
-            "tags": [],
-            "createdAt": now_utc(),
-            "completedAt": None,
-        }
-        goals["nodes"].append(node)
-        self.import_snapshot(goals)
-        return node
+                return self._row_to_node(existing)
+            ts = now_utc()
+            conn.execute(
+                """
+                insert into nodes(id, type, title, status, parent_id, importance, due_date, tags_json, created_at, completed_at)
+                values (?, ?, ?, 'active', ?, null, null, '[]', ?, null)
+                """,
+                (_id, node_type, title, parent_id, ts),
+            )
+            row_idx = conn.execute(
+                "select coalesce(max(sort_index), -1) + 1 from node_order where parent_id is ?",
+                (parent_id,),
+            ).fetchone()
+            conn.execute(
+                "insert into node_order(node_id, parent_id, sort_index) values (?, ?, ?)",
+                (_id, parent_id, row_idx[0]),
+            )
+            conn.commit()
+            row = conn.execute("select * from nodes where id = ?", (_id,)).fetchone()
+        self.export_json_mirror()
+        return self._row_to_node(row)
 
     def get_node(self, node_id: str) -> dict[str, Any] | None:
         self.ensure_ready()
@@ -383,23 +401,30 @@ class DigestStore:
         return self._row_to_node(row) if row else None
 
     def rename_node(self, node_id: str, title: str) -> dict[str, Any] | None:
-        goals = self.load_goals_data()
-        for node in goals["nodes"]:
-            if node["id"] == node_id:
-                node["title"] = title
-                self.import_snapshot(goals)
-                return node
-        return None
+        self.ensure_ready()
+        with self.connect() as conn:
+            conn.execute("update nodes set title = ? where id = ?", (title, node_id))
+            conn.commit()
+            row = conn.execute("select * from nodes where id = ?", (node_id,)).fetchone()
+        if not row:
+            return None
+        self.export_json_mirror()
+        return self._row_to_node(row)
 
     def set_node_status(self, node_id: str, status: str) -> dict[str, Any] | None:
-        goals = self.load_goals_data()
-        for node in goals["nodes"]:
-            if node["id"] == node_id:
-                node["status"] = status
-                node["completedAt"] = now_utc() if status == "completed" else None
-                self.import_snapshot(goals)
-                return node
-        return None
+        self.ensure_ready()
+        completed_at = now_utc() if status == "completed" else None
+        with self.connect() as conn:
+            conn.execute(
+                "update nodes set status = ?, completed_at = ? where id = ?",
+                (status, completed_at, node_id),
+            )
+            conn.commit()
+            row = conn.execute("select * from nodes where id = ?", (node_id,)).fetchone()
+        if not row:
+            return None
+        self.export_json_mirror()
+        return self._row_to_node(row)
 
     def find_active_matches(self, query: str) -> list[dict[str, Any]]:
         self.ensure_ready()

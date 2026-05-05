@@ -61,3 +61,59 @@ def test_find_active_matches_case_insensitive(populated):
     results = store.find_active_matches("GOAL")
     assert len(results) == 1
     assert results[0]["id"] == goal["id"]
+
+
+def test_rename_node_updates_title(populated):
+    store, goal, idea, step = populated
+    updated = store.rename_node(goal["id"], "Renamed Goal")
+    assert updated is not None
+    assert updated["title"] == "Renamed Goal"
+    assert store.get_node(goal["id"])["title"] == "Renamed Goal"
+
+
+def test_rename_node_returns_none_for_missing(store):
+    assert store.rename_node("nonexistent", "title") is None
+
+
+def test_set_node_status_completes(populated):
+    store, goal, idea, step = populated
+    updated = store.set_node_status(goal["id"], "completed")
+    assert updated["status"] == "completed"
+    assert updated["completedAt"] is not None
+    assert store.get_node(goal["id"])["status"] == "completed"
+
+
+def test_set_node_status_active_clears_completed_at(populated):
+    store, goal, idea, step = populated
+    store.set_node_status(goal["id"], "completed")
+    updated = store.set_node_status(goal["id"], "active")
+    assert updated["completedAt"] is None
+
+
+def test_set_node_status_returns_none_for_missing(store):
+    assert store.set_node_status("nonexistent", "completed") is None
+
+
+def test_add_node_appends_to_siblings(populated):
+    store, goal, idea, step = populated
+    idea2 = store.add_node("idea", goal["id"], "Idea B2")
+    assert idea2["parentId"] == goal["id"]
+    assert idea2["type"] == "idea"
+    ids = [n["id"] for n in store.load_goals_data()["nodes"] if n["parentId"] == goal["id"]]
+    assert ids == [idea["id"], idea2["id"]]
+
+
+def test_add_node_idempotent_with_same_id(populated):
+    store, goal, idea, step = populated
+    result = store.add_node("idea", goal["id"], "Idea B", node_id=idea["id"])
+    assert result["id"] == idea["id"]
+    count = len([n for n in store.load_goals_data()["nodes"] if n["parentId"] == goal["id"]])
+    assert count == 1
+
+
+def test_json_mirror_reflects_rename(populated):
+    store, goal, idea, step = populated
+    store.rename_node(goal["id"], "Mirror Test")
+    goals = json.loads(store.goals_path.read_text())
+    titles = [n["title"] for n in goals["nodes"]]
+    assert "Mirror Test" in titles
