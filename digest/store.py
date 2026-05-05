@@ -25,6 +25,11 @@ DEFAULT_CHECKINS = {"version": 1, "checkins": []}
 BADGES = {"goal": "G", "idea": "I", "step": "S", "task": "T", "free": "·"}
 VALID_TYPES = ("goal", "idea", "step", "task", "free")
 VALID_STATUSES = ("active", "completed", "archived")
+TYPE_FOR_DEPTH = ["goal", "idea", "step", "task"]
+
+
+def type_for_depth(depth: int) -> str:
+    return TYPE_FOR_DEPTH[depth] if depth < len(TYPE_FOR_DEPTH) else "free"
 
 
 def now_utc() -> str:
@@ -267,6 +272,17 @@ class DigestStore:
             "createdAt": row["created_at"],
             "completedAt": row["completed_at"],
         }
+
+    def _node_depth(self, conn: sqlite3.Connection, node_id: str) -> int:
+        depth = 0
+        current = node_id
+        while True:
+            row = conn.execute("select parent_id from nodes where id = ?", (current,)).fetchone()
+            if not row or row["parent_id"] is None:
+                break
+            depth += 1
+            current = row["parent_id"]
+        return depth
 
     def _export_nodes_preorder(self, conn: sqlite3.Connection, parent_id: str | None, out: list[dict[str, Any]]):
         for row in self._ordered_nodes(conn, parent_id):
@@ -519,6 +535,84 @@ class DigestStore:
             )
             conn.commit()
         self.export_json_mirror()
+
+    def indent(self, node_id: str) -> dict[str, Any]:
+        """Make node the last child of its previous sibling."""
+        self.ensure_ready()
+        with self.connect() as conn:
+            current_order = conn.execute(
+                "select parent_id, sort_index from node_order where node_id = ?", (node_id,)
+            ).fetchone()
+            if not current_order:
+                raise ValueError(f"Node {node_id} not found")
+            prev_sibling = conn.execute(
+                """
+                select no.node_id from node_order no
+                where no.parent_id is ? and no.sort_index < ?
+                order by no.sort_index desc limit 1
+                """,
+                (current_order["parent_id"], current_order["sort_index"]),
+            ).fetchone()
+            if not prev_sibling:
+                raise ValueError(f"no previous sibling for {node_id}")
+            new_parent_id = prev_sibling["node_id"]
+            new_depth = self._node_depth(conn, new_parent_id) + 1
+            new_type = type_for_depth(new_depth)
+            last_child_idx = conn.execute(
+                "select coalesce(max(sort_index), -1) + 1 from node_order where parent_id = ?",
+                (new_parent_id,),
+            ).fetchone()[0]
+            conn.execute(
+                "update nodes set parent_id = ?, type = ? where id = ?",
+                (new_parent_id, new_type, node_id),
+            )
+            conn.execute(
+                "update node_order set parent_id = ?, sort_index = ? where node_id = ?",
+                (new_parent_id, last_child_idx, node_id),
+            )
+            conn.commit()
+            row = conn.execute("select * from nodes where id = ?", (node_id,)).fetchone()
+        self.export_json_mirror()
+        return self._row_to_node(row)
+
+    def unindent(self, node_id: str) -> dict[str, Any]:
+        """Make node the next sibling of its current parent."""
+        self.ensure_ready()
+        with self.connect() as conn:
+            node_row = conn.execute("select * from nodes where id = ?", (node_id,)).fetchone()
+            if not node_row:
+                raise ValueError(f"Node {node_id} not found")
+            current_parent_id = node_row["parent_id"]
+            if current_parent_id is None:
+                raise ValueError(f"already at root: {node_id}")
+            parent_order = conn.execute(
+                "select parent_id, sort_index from node_order where node_id = ?",
+                (current_parent_id,),
+            ).fetchone()
+            new_parent_id = parent_order["parent_id"] if parent_order else None
+            insert_after = parent_order["sort_index"] if parent_order else -1
+            conn.execute(
+                """
+                update node_order set sort_index = sort_index + 1
+                where parent_id is ? and sort_index > ?
+                """,
+                (new_parent_id, insert_after),
+            )
+            new_sort = insert_after + 1
+            new_depth = self._node_depth(conn, new_parent_id) + 1 if new_parent_id else 0
+            new_type = type_for_depth(new_depth)
+            conn.execute(
+                "update nodes set parent_id = ?, type = ? where id = ?",
+                (new_parent_id, new_type, node_id),
+            )
+            conn.execute(
+                "update node_order set parent_id = ?, sort_index = ? where node_id = ?",
+                (new_parent_id, new_sort, node_id),
+            )
+            conn.commit()
+            row = conn.execute("select * from nodes where id = ?", (node_id,)).fetchone()
+        self.export_json_mirror()
+        return self._row_to_node(row)
 
     def find_active_matches(self, query: str) -> list[dict[str, Any]]:
         self.ensure_ready()

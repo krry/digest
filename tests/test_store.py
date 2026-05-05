@@ -4,7 +4,7 @@ import json
 import pathlib
 import pytest
 
-from digest.store import DigestStore
+from digest.store import DigestStore, type_for_depth
 
 
 @pytest.fixture
@@ -195,3 +195,61 @@ def test_move_down_noop_at_bottom(populated):
     store.move_down(idea2["id"])
     children = [n["id"] for n in store.load_goals_data()["nodes"] if n["parentId"] == goal["id"]]
     assert children[-1] == idea2["id"]
+
+
+def test_indent_reparents_to_previous_sibling(populated):
+    store, goal, idea, step = populated
+    idea2 = store.add_node("idea", goal["id"], "Idea B2")
+    store.indent(idea2["id"])
+    result = store.get_node(idea2["id"])
+    assert result["parentId"] == idea["id"]
+
+
+def test_indent_adjusts_type(populated):
+    store, goal, idea, step = populated
+    idea2 = store.add_node("idea", goal["id"], "Idea B2")
+    store.indent(idea2["id"])
+    result = store.get_node(idea2["id"])
+    assert result["type"] == "step"
+
+
+def test_indent_fails_when_no_previous_sibling(populated):
+    store, goal, idea, step = populated
+    with pytest.raises(ValueError, match="no previous sibling"):
+        store.indent(idea["id"])
+
+
+def test_unindent_reparents_to_grandparent(populated):
+    store, goal, idea, step = populated
+    store.unindent(idea["id"])
+    result = store.get_node(idea["id"])
+    assert result["parentId"] is None
+
+
+def test_unindent_adjusts_type(populated):
+    store, goal, idea, step = populated
+    store.unindent(idea["id"])
+    result = store.get_node(idea["id"])
+    assert result["type"] == "goal"
+
+
+def test_unindent_inserts_after_former_parent(populated):
+    store, goal, idea, step = populated
+    store.unindent(idea["id"])
+    roots = [n["id"] for n in store.load_goals_data()["nodes"] if n["parentId"] is None]
+    assert roots.index(goal["id"]) < roots.index(idea["id"])
+
+
+def test_unindent_fails_at_root(populated):
+    store, goal, idea, step = populated
+    with pytest.raises(ValueError, match="already at root"):
+        store.unindent(goal["id"])
+
+
+def test_type_for_depth():
+    assert type_for_depth(0) == "goal"
+    assert type_for_depth(1) == "idea"
+    assert type_for_depth(2) == "step"
+    assert type_for_depth(3) == "task"
+    assert type_for_depth(4) == "free"
+    assert type_for_depth(10) == "free"
