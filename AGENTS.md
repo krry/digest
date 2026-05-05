@@ -13,6 +13,7 @@ The design is intentionally lightweight. Preserve that unless asked otherwise.
 ## Project Shape
 
 - `bin/gist-tui`: main Python TUI app
+- `bin/digest-api.sh`: local private API + PWA server
 - `gist-tui.tcss`: Textual styles for the TUI
 - `bin/show.sh`: render the goal tree from JSON
 - `bin/add.sh`: append a node to `goals.json`
@@ -24,6 +25,7 @@ The design is intentionally lightweight. Preserve that unless asked otherwise.
 - `values.json`: values store
 - `checkins.json`: optional local check-in history file
 - `digest.db`: canonical local datastore
+- `web/`: mobile-first PWA shell with IndexedDB cache and service worker
 - `prefs.json`: user preferences (theme, view mode, sort, expanded nodes)
 - `*.json.example`: committed blank datastore templates
 
@@ -124,6 +126,7 @@ Those skills assume the local scripts in `bin/` remain stable. If you change scr
 Use these when working on the project:
 
 - `./bin/gist-tui`
+- `./bin/digest-api.sh`
 - `./bin/init.sh`
 - `./bin/show.sh`
 - `./bin/show.sh all`

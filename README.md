@@ -19,6 +19,7 @@ It also bootstraps `digest.db`, the canonical local datastore.
 ./bin/gist-tui        # open the interactive TUI
 ./bin/show.sh         # print the current tree
 ./bin/show.sh all     # include archived items
+./bin/digest-api.sh   # serve the private web client + local API on 127.0.0.1:8787
 ```
 
 ## Storage
@@ -26,6 +27,21 @@ It also bootstraps `digest.db`, the canonical local datastore.
 - `digest.db` is the canonical local datastore
 - `goals.json`, `values.json`, and `checkins.json` are mirrored export files
 - the shell scripts and TUI should be treated as the public interface, not direct file edits
+
+## Web Client
+
+There is now a small mobile-first PWA served by `./bin/digest-api.sh`.
+
+It is intentionally narrow:
+
+- focus into the tree
+- add child or sibling nodes
+- rename, complete, and archive nodes
+- read values
+- work from cached local state when offline
+- replay queued changes when the private host is reachable again
+
+For now, the TUI is still the better desktop client.
 
 ## TUI — key bindings
 

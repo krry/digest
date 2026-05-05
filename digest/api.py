@@ -1,154 +1,43 @@
 from __future__ import annotations
 
-from typing import Any
-
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+import argparse
+import json
+import mimetypes
+import pathlib
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 from digest.store import DigestStore
 
-app = FastAPI(title="Digest API", version="0.1.0")
 store = DigestStore()
+WEB_ROOT = pathlib.Path(__file__).resolve().parent.parent / "web"
 
 
-class AddChildRequest(BaseModel):
-    parentId: str | None = None
-    title: str
+def _json_bytes(payload: object) -> bytes:
+    return json.dumps(payload, indent=2).encode("utf-8")
 
 
-class AddSiblingRequest(BaseModel):
-    nodeId: str | None = None
-    title: str
-
-
-class RenameNodeRequest(BaseModel):
-    nodeId: str
-    title: str
-
-
-class NodeIdRequest(BaseModel):
-    nodeId: str
-
-
-class ValuesRequest(BaseModel):
-    establishedAt: str | None = None
-    values: list[dict[str, Any]]
-
-
-class CheckinRequest(BaseModel):
-    date: str | None = None
-    question: str
-    response: str
-    adjustment: str
-
-
-@app.on_event("startup")
-def startup():
-    store.ensure_ready()
-
-
-@app.get("/health")
-def health():
-    return {"ok": True}
-
-
-@app.get("/api/v1/bootstrap")
-def bootstrap():
-    return store.bootstrap_payload()
-
-
-@app.get("/api/v1/nodes")
-def nodes():
-    return store.load_goals_data()
-
-
-@app.get("/api/v1/values")
-def values():
-    return store.load_values_data()
-
-
-@app.get("/api/v1/checkins")
-def checkins():
-    return store.load_checkins_data()
-
-
-@app.get("/api/v1/export/json")
-def export_json():
-    return {
-        "goals": store.load_goals_data(),
-        "values": store.load_values_data(),
-        "checkins": store.load_checkins_data(),
+def _serve_web_path(path: str) -> pathlib.Path | None:
+    mapping = {
+        "/": "index.html",
+        "/styles.css": "styles.css",
+        "/app.js": "app.js",
+        "/db.js": "db.js",
+        "/sw.js": "sw.js",
+        "/manifest.webmanifest": "manifest.webmanifest",
     }
-
-
-@app.get("/api/v1/sync")
-def sync(_since: str | None = None):
-    return {"cursor": store.bootstrap_payload()["serverTime"], "changes": []}
-
-
-@app.post("/api/v1/sync/push")
-def sync_push(payload: dict[str, Any]):
-    return {
-        "ok": True,
-        "acceptedMutationIds": [m.get("clientMutationId") for m in payload.get("mutations", [])],
-        "rejectedMutations": [],
-    }
-
-
-@app.post("/api/v1/commands/add-child")
-def add_child(request: AddChildRequest):
-    return {"ok": True, "node": store.add_node("goal" if request.parentId is None else _child_type(request.parentId), request.parentId, request.title)}
-
-
-@app.post("/api/v1/commands/add-sibling")
-def add_sibling(request: AddSiblingRequest):
-    goals = store.load_goals_data()["nodes"]
-    node = next((n for n in goals if n["id"] == request.nodeId), None) if request.nodeId else None
-    node_type = node["type"] if node else "goal"
-    parent_id = node["parentId"] if node else None
-    return {"ok": True, "node": store.add_node(node_type, parent_id, request.title)}
-
-
-@app.post("/api/v1/commands/rename-node")
-def rename_node(request: RenameNodeRequest):
-    node = store.rename_node(request.nodeId, request.title)
-    if not node:
-        raise HTTPException(status_code=404, detail="Node not found")
-    return {"ok": True, "node": node}
-
-
-@app.post("/api/v1/commands/complete-node")
-def complete_node(request: NodeIdRequest):
-    node = store.set_node_status(request.nodeId, "completed")
-    if not node:
-        raise HTTPException(status_code=404, detail="Node not found")
-    return {"ok": True, "node": node}
-
-
-@app.post("/api/v1/commands/archive-node")
-def archive_node(request: NodeIdRequest):
-    node = store.set_node_status(request.nodeId, "archived")
-    if not node:
-        raise HTTPException(status_code=404, detail="Node not found")
-    return {"ok": True, "node": node}
-
-
-@app.post("/api/v1/commands/update-values")
-def update_values(request: ValuesRequest):
-    store.write_values_data({"version": 1, "establishedAt": request.establishedAt, "values": request.values})
-    return {"ok": True, "values": store.load_values_data()}
-
-
-@app.post("/api/v1/commands/add-checkin")
-def add_checkin(request: CheckinRequest):
-    store.append_checkin(request.model_dump())
-    return {"ok": True}
+    filename = mapping.get(path)
+    if not filename:
+        return None
+    target = WEB_ROOT / filename
+    return target if target.exists() else None
 
 
 def _child_type(parent_id: str) -> str:
-    node = next((n for n in store.load_goals_data()["nodes"] if n["id"] == parent_id), None)
+    node = store.get_node(parent_id)
     if not node:
-        raise HTTPException(status_code=404, detail="Parent not found")
+        raise KeyError("Parent not found")
     return {
         "goal": "idea",
         "idea": "step",
@@ -156,3 +45,171 @@ def _child_type(parent_id: str) -> str:
         "task": "free",
         "free": "free",
     }[node["type"]]
+
+
+class DigestHandler(BaseHTTPRequestHandler):
+    server_version = "DigestHTTP/0.1"
+
+    def do_GET(self):
+        store.ensure_ready()
+        parsed = urlparse(self.path)
+        if parsed.path == "/health":
+            return self._send_json({"ok": True})
+        if parsed.path == "/api/v1/bootstrap":
+            return self._send_json(store.bootstrap_payload())
+        if parsed.path == "/api/v1/nodes":
+            return self._send_json(store.load_goals_data())
+        if parsed.path == "/api/v1/values":
+            return self._send_json(store.load_values_data())
+        if parsed.path == "/api/v1/checkins":
+            return self._send_json(store.load_checkins_data())
+        if parsed.path == "/api/v1/export/json":
+            return self._send_json(
+                {
+                    "goals": store.load_goals_data(),
+                    "values": store.load_values_data(),
+                    "checkins": store.load_checkins_data(),
+                }
+            )
+        if parsed.path == "/api/v1/sync":
+            params = parse_qs(parsed.query)
+            return self._send_json(
+                {
+                    "cursor": store.bootstrap_payload()["serverTime"],
+                    "requestedSince": params.get("since", [None])[0],
+                    "changes": [],
+                }
+            )
+
+        asset = _serve_web_path(parsed.path)
+        if asset:
+            return self._send_file(asset)
+        return self._send_json({"ok": False, "error": "Not found"}, status=HTTPStatus.NOT_FOUND)
+
+    def do_POST(self):
+        store.ensure_ready()
+        parsed = urlparse(self.path)
+        payload = self._read_json_body()
+
+        try:
+            if parsed.path == "/api/v1/commands/add-child":
+                parent_id = payload.get("parentId")
+                node = store.add_node(
+                    "goal" if parent_id is None else _child_type(parent_id),
+                    parent_id,
+                    payload["title"],
+                    node_id=payload.get("nodeId"),
+                )
+                return self._send_json({"ok": True, "node": node})
+
+            if parsed.path == "/api/v1/commands/add-sibling":
+                sibling = store.get_node(payload.get("nodeId")) if payload.get("nodeId") else None
+                node_type = sibling["type"] if sibling else "goal"
+                parent_id = sibling["parentId"] if sibling else None
+                node = store.add_node(
+                    node_type,
+                    parent_id,
+                    payload["title"],
+                    node_id=payload.get("newNodeId"),
+                )
+                return self._send_json({"ok": True, "node": node})
+
+            if parsed.path == "/api/v1/commands/rename-node":
+                node = store.rename_node(payload["nodeId"], payload["title"])
+                if not node:
+                    return self._send_json({"ok": False, "error": "Node not found"}, status=HTTPStatus.NOT_FOUND)
+                return self._send_json({"ok": True, "node": node})
+
+            if parsed.path == "/api/v1/commands/complete-node":
+                node = store.set_node_status(payload["nodeId"], "completed")
+                if not node:
+                    return self._send_json({"ok": False, "error": "Node not found"}, status=HTTPStatus.NOT_FOUND)
+                return self._send_json({"ok": True, "node": node})
+
+            if parsed.path == "/api/v1/commands/archive-node":
+                node = store.set_node_status(payload["nodeId"], "archived")
+                if not node:
+                    return self._send_json({"ok": False, "error": "Node not found"}, status=HTTPStatus.NOT_FOUND)
+                return self._send_json({"ok": True, "node": node})
+
+            if parsed.path == "/api/v1/commands/update-values":
+                store.write_values_data(
+                    {
+                        "version": 1,
+                        "establishedAt": payload.get("establishedAt"),
+                        "values": payload.get("values", []),
+                    }
+                )
+                return self._send_json({"ok": True, "values": store.load_values_data()})
+
+            if parsed.path == "/api/v1/commands/add-checkin":
+                store.append_checkin(payload)
+                return self._send_json({"ok": True})
+
+            if parsed.path == "/api/v1/sync/push":
+                accepted = [mutation.get("clientMutationId") for mutation in payload.get("mutations", [])]
+                return self._send_json(
+                    {
+                        "ok": True,
+                        "acceptedMutationIds": accepted,
+                        "rejectedMutations": [],
+                    }
+                )
+        except KeyError as exc:
+            return self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+        except Exception as exc:
+            return self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+
+        return self._send_json({"ok": False, "error": "Not found"}, status=HTTPStatus.NOT_FOUND)
+
+    def log_message(self, format: str, *args):
+        return
+
+    def _read_json_body(self) -> dict:
+        length = int(self.headers.get("content-length", "0"))
+        raw = self.rfile.read(length) if length > 0 else b"{}"
+        return json.loads(raw.decode("utf-8") or "{}")
+
+    def _send_json(self, payload: object, status: HTTPStatus = HTTPStatus.OK):
+        body = _json_bytes(payload)
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_file(self, path: pathlib.Path):
+        body = path.read_bytes()
+        media_type, _encoding = mimetypes.guess_type(str(path))
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", media_type or "application/octet-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="digest.api")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", default=8787, type=int)
+    return parser
+
+
+def run_server(host: str = "127.0.0.1", port: int = 8787):
+    store.ensure_ready()
+    server = ThreadingHTTPServer((host, port), DigestHandler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+def main(argv: list[str] | None = None):
+    args = build_parser().parse_args(argv)
+    run_server(host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()

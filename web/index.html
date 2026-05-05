@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Digest</title>
+    <meta name="theme-color" content="#f4efe4">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Digest</p>
+          <h1>Focus makes the tree move.</h1>
+        </div>
+        <button id="sync-button" class="ghost-button">Sync</button>
+      </header>
+
+      <section id="status-strip" class="status-strip">
+        <span id="status-pill" class="pill">Booting…</span>
+        <span id="status-detail" class="status-detail">Loading cached state.</span>
+      </section>
+
+      <nav id="breadcrumbs" class="breadcrumbs"></nav>
+
+      <section class="view-toggle">
+        <button id="children-view-button" class="toggle-button active">Children</button>
+        <button id="all-view-button" class="toggle-button">All Of This Level</button>
+      </section>
+
+      <section class="sort-strip">
+        <label for="sort-select">Sort</label>
+        <select id="sort-select">
+          <option value="manual">Manual</option>
+          <option value="title">Title</option>
+          <option value="created">Created</option>
+          <option value="status">Status</option>
+          <option value="importance">Importance</option>
+          <option value="due">Due</option>
+        </select>
+      </section>
+
+      <main>
+        <section id="focus-card" class="focus-card hidden"></section>
+        <section id="list" class="list"></section>
+        <section id="empty-state" class="empty-state hidden">
+          <p>Nothing here yet.</p>
+          <p class="muted">Add something small and let the structure emerge.</p>
+        </section>
+      </main>
+
+      <section class="values-panel">
+        <div class="panel-header">
+          <h2>Values</h2>
+          <span id="values-count" class="muted"></span>
+        </div>
+        <div id="values-list" class="values-list"></div>
+      </section>
+
+      <form id="composer" class="composer">
+        <div class="composer-row">
+          <select id="composer-mode">
+            <option value="child">Add Child</option>
+            <option value="sibling">Add Sibling</option>
+          </select>
+          <input id="composer-input" type="text" placeholder="What belongs here?" autocomplete="off">
+          <button type="submit" class="primary-button">Add</button>
+        </div>
+      </form>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+  </html>

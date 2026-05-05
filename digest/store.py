@@ -344,10 +344,20 @@ class DigestStore:
             "syncCursor": now_utc(),
         }
 
-    def add_node(self, node_type: str, parent_id: str | None, title: str) -> dict[str, Any]:
+    def add_node(
+        self,
+        node_type: str,
+        parent_id: str | None,
+        title: str,
+        node_id: str | None = None,
+    ) -> dict[str, Any]:
         goals = self.load_goals_data()
+        if node_id:
+            existing = next((node for node in goals["nodes"] if node["id"] == node_id), None)
+            if existing:
+                return existing
         node = {
-            "id": new_id(),
+            "id": node_id or new_id(),
             "type": node_type,
             "title": title,
             "status": "active",
@@ -361,6 +371,9 @@ class DigestStore:
         goals["nodes"].append(node)
         self.import_snapshot(goals)
         return node
+
+    def get_node(self, node_id: str) -> dict[str, Any] | None:
+        return next((node for node in self.load_goals_data()["nodes"] if node["id"] == node_id), None)
 
     def rename_node(self, node_id: str, title: str) -> dict[str, Any] | None:
         goals = self.load_goals_data()
