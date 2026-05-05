@@ -173,11 +173,12 @@ function renderList() {
   els.list.innerHTML = nodes
     .map(
       (node) => `
-        <article class="card ${node.status}">
+        <article class="card ${escapeHtml(node.status)}" data-id="${node.id}">
           <div class="card-header">
             <div>
               <div class="card-title">${badgeFor(node.type)} ${escapeHtml(node.title)}${node.status === "completed" ? " ✓" : ""}</div>
-              <div class="card-subtitle">${node.status} · ${node.dueDate || "no due date"} · ${childrenOf(node.id).length} children</div>
+              <div class="card-subtitle">${escapeHtml(node.status)} · ${escapeHtml(node.dueDate || "no due date")} · imp:${node.importance ?? "—"} · ${childrenOf(node.id).length} children</div>
+              ${node.tags && node.tags.length ? `<div class="card-tags">${node.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
             </div>
             <button class="icon-button" data-open="${node.id}">Open</button>
           </div>
@@ -185,6 +186,28 @@ function renderList() {
             <button class="action-button" data-rename="${node.id}">Rename</button>
             <button class="action-button" data-complete="${node.id}">Done</button>
             <button class="action-button" data-archive="${node.id}">Archive</button>
+            <button class="action-button" data-move-up="${node.id}">&#x2191;</button>
+            <button class="action-button" data-move-down="${node.id}">&#x2193;</button>
+            <button class="action-button" data-indent="${node.id}">&#x2192;</button>
+            <button class="action-button" data-unindent="${node.id}">&#x2190;</button>
+            <button class="action-button" data-edit-details="${node.id}">&#x22EF;</button>
+          </div>
+          <div class="card-detail-panel hidden" id="detail-${node.id}">
+            <div class="detail-row">
+              <label>Importance</label>
+              <div class="importance-picker">
+                ${[1,2,3,4,5].map((n) => `<button class="imp-btn${node.importance === n ? " active" : ""}" data-imp="${node.id}" data-val="${n}">${n}</button>`).join("")}
+                <button class="imp-btn" data-imp="${node.id}" data-val="">&mdash;</button>
+              </div>
+            </div>
+            <div class="detail-row">
+              <label>Due date</label>
+              <input class="detail-input" type="text" placeholder="YYYY, YYYY-MM, or YYYY-MM-DD" data-due="${node.id}" value="${escapeHtml(node.dueDate || "")}">
+            </div>
+            <div class="detail-row">
+              <label>Tags</label>
+              <input class="detail-input" type="text" placeholder="comma-separated" data-tags="${node.id}" value="${escapeHtml((node.tags || []).join(", "))}">
+            </div>
           </div>
         </article>
       `
@@ -225,6 +248,60 @@ function renderList() {
       const id = button.getAttribute("data-archive");
       if (!id) return;
       await queueMutation({ id: generateId(), type: "archive-node", nodeId: id });
+    });
+  });
+
+  els.list.querySelectorAll("[data-move-up]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-move-up");
+      if (id) await queueMutation({ id: generateId(), type: "move-node-up", nodeId: id });
+    });
+  });
+  els.list.querySelectorAll("[data-move-down]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-move-down");
+      if (id) await queueMutation({ id: generateId(), type: "move-node-down", nodeId: id });
+    });
+  });
+  els.list.querySelectorAll("[data-indent]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-indent");
+      if (id) await queueMutation({ id: generateId(), type: "indent-node", nodeId: id });
+    });
+  });
+  els.list.querySelectorAll("[data-unindent]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-unindent");
+      if (id) await queueMutation({ id: generateId(), type: "unindent-node", nodeId: id });
+    });
+  });
+  els.list.querySelectorAll("[data-edit-details]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-edit-details");
+      const panel = document.getElementById(`detail-${id}`);
+      if (panel) panel.classList.toggle("hidden");
+    });
+  });
+  els.list.querySelectorAll("[data-imp]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-imp");
+      const val = btn.getAttribute("data-val");
+      const importance = val === "" ? null : parseInt(val, 10);
+      if (id) await queueMutation({ id: generateId(), type: "set-importance", nodeId: id, importance });
+    });
+  });
+  els.list.querySelectorAll("[data-due]").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const id = input.getAttribute("data-due");
+      const dueDate = input.value.trim() || null;
+      if (id) await queueMutation({ id: generateId(), type: "set-due-date", nodeId: id, dueDate });
+    });
+  });
+  els.list.querySelectorAll("[data-tags]").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const id = input.getAttribute("data-tags");
+      const tags = input.value.split(",").map((t) => t.trim()).filter(Boolean);
+      if (id) await queueMutation({ id: generateId(), type: "set-tags", nodeId: id, tags });
     });
   });
 }
@@ -326,6 +403,50 @@ function applyMutationLocally(mutation) {
     node.status = "archived";
     if (currentFocusId() === node.id) state.focusStack.pop();
   }
+  if (mutation.type === "set-importance") node.importance = mutation.importance ?? null;
+  if (mutation.type === "set-due-date") node.dueDate = mutation.dueDate ?? null;
+  if (mutation.type === "set-tags") node.tags = mutation.tags ?? [];
+  if (mutation.type === "move-node-up") {
+    const siblings = state.nodes
+      .filter((n) => n.parentId === node.parentId && n.status !== "archived")
+      .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
+    const idx = siblings.findIndex((n) => n.id === node.id);
+    if (idx > 0) {
+      const tmp = siblings[idx - 1].sortIndex;
+      siblings[idx - 1].sortIndex = node.sortIndex;
+      node.sortIndex = tmp;
+    }
+  }
+  if (mutation.type === "move-node-down") {
+    const siblings = state.nodes
+      .filter((n) => n.parentId === node.parentId && n.status !== "archived")
+      .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
+    const idx = siblings.findIndex((n) => n.id === node.id);
+    if (idx < siblings.length - 1) {
+      const tmp = siblings[idx + 1].sortIndex;
+      siblings[idx + 1].sortIndex = node.sortIndex;
+      node.sortIndex = tmp;
+    }
+  }
+  if (mutation.type === "indent-node") {
+    const siblings = state.nodes
+      .filter((n) => n.parentId === node.parentId && n.status !== "archived")
+      .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
+    const idx = siblings.findIndex((n) => n.id === node.id);
+    if (idx > 0) {
+      const newParent = siblings[idx - 1];
+      node.parentId = newParent.id;
+      node.type = childType(newParent.type);
+    }
+  }
+  if (mutation.type === "unindent-node") {
+    const parent = nodeById(node.parentId);
+    if (parent) {
+      node.parentId = parent.parentId ?? null;
+      const grandparent = parent.parentId ? nodeById(parent.parentId) : null;
+      node.type = childType(grandparent?.type ?? "root");
+    }
+  }
 }
 
 async function queueMutation(mutation) {
@@ -393,6 +514,48 @@ async function replayMutation(mutation) {
   }
   if (mutation.type === "archive-node") {
     return api("/api/v1/commands/archive-node", {
+      method: "POST",
+      body: JSON.stringify({ nodeId: mutation.nodeId }),
+    });
+  }
+  if (mutation.type === "set-importance") {
+    return api("/api/v1/commands/set-importance", {
+      method: "POST",
+      body: JSON.stringify({ nodeId: mutation.nodeId, importance: mutation.importance }),
+    });
+  }
+  if (mutation.type === "set-due-date") {
+    return api("/api/v1/commands/set-due-date", {
+      method: "POST",
+      body: JSON.stringify({ nodeId: mutation.nodeId, dueDate: mutation.dueDate }),
+    });
+  }
+  if (mutation.type === "set-tags") {
+    return api("/api/v1/commands/set-tags", {
+      method: "POST",
+      body: JSON.stringify({ nodeId: mutation.nodeId, tags: mutation.tags }),
+    });
+  }
+  if (mutation.type === "move-node-up") {
+    return api("/api/v1/commands/move-node-up", {
+      method: "POST",
+      body: JSON.stringify({ nodeId: mutation.nodeId }),
+    });
+  }
+  if (mutation.type === "move-node-down") {
+    return api("/api/v1/commands/move-node-down", {
+      method: "POST",
+      body: JSON.stringify({ nodeId: mutation.nodeId }),
+    });
+  }
+  if (mutation.type === "indent-node") {
+    return api("/api/v1/commands/indent-node", {
+      method: "POST",
+      body: JSON.stringify({ nodeId: mutation.nodeId }),
+    });
+  }
+  if (mutation.type === "unindent-node") {
+    return api("/api/v1/commands/unindent-node", {
       method: "POST",
       body: JSON.stringify({ nodeId: mutation.nodeId }),
     });
