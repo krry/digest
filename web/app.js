@@ -27,8 +27,7 @@ let syncInFlight = false;
 let retryTimer = null;
 
 const els = {
-  statusPill: document.querySelector("#status-pill"),
-  statusDetail: document.querySelector("#status-detail"),
+  syncDot: document.querySelector("#sync-dot"),
   breadcrumbs: document.querySelector("#breadcrumbs"),
   focusCard: document.querySelector("#focus-card"),
   list: document.querySelector("#list"),
@@ -124,10 +123,20 @@ function setStatus(status, detail) {
 }
 
 function renderStatus() {
+  const btn = els.syncButton;
+  const dot = els.syncDot;
   const pending = state.pendingMutations.length;
-  const label = pending > 0 ? `${state.status} · ${pending} pending` : state.status;
-  els.statusPill.textContent = label;
-  els.statusDetail.textContent = state.detail;
+
+  // Spinning arrow while syncing or mutations pending
+  const busy = state.status === "syncing" || pending > 0;
+  btn.classList.toggle("spinning", busy);
+
+  // Dot color: green=synced, yellow=pending/local, red=error/offline, grey=starting
+  dot.className = "sync-dot";
+  if (state.status === "synced" && pending === 0) dot.classList.add("sync-dot--green");
+  else if (state.status === "error" || state.status === "offline") dot.classList.add("sync-dot--red");
+  else if (state.status === "starting" || state.status === "booting") { /* grey default */ }
+  else dot.classList.add("sync-dot--yellow");
 }
 
 function renderBreadcrumbs() {

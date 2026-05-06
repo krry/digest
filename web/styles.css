@@ -51,8 +51,7 @@ body {
 
 /* ── Glass surface ──────────────────────────────── */
 
-.topbar,
-.status-strip,
+.titlebar,
 .focus-card,
 .values-panel,
 .card,
@@ -106,57 +105,73 @@ body {
   z-index: 0;
 }
 
-/* ── Topbar ─────────────────────────────────────── */
+/* ── Title bar ──────────────────────────────────── */
 
-.topbar {
-  border-radius: 28px;
-  padding: 1rem 1rem 0.85rem;
+.titlebar {
+  border-radius: 18px;
+  padding: 0.6rem 0.75rem;
   display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 1rem;
+  align-items: center;
+  gap: 0.75rem;
 }
 
-.eyebrow {
-  margin: 0 0 0.35rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 0.72rem;
+.titlebar-title {
+  flex: 1;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
 }
 
-h1, h2, h3, p { margin: 0; }
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
 
-h1 { font-size: 1.35rem; line-height: 1.15; }
+.sync-button {
+  background: none;
+  border: none;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.3rem;
+  transition: transform 0.6s ease;
+}
 
-/* ── Status + sort strips ───────────────────────── */
+.sync-button.spinning {
+  animation: spin 0.9s linear infinite;
+}
 
-.status-strip,
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+  transition: background 0.3s ease;
+}
+
+.sync-dot--green  { background: #34d399; }
+.sync-dot--yellow { background: #fbbf24; }
+.sync-dot--red    { background: #f87171; }
+
+h2, h3, p { margin: 0; }
+
+/* ── Sort strip ─────────────────────────────────── */
+
 .sort-strip {
   margin-top: 0.85rem;
   border-radius: 18px;
   padding: 0.85rem 1rem;
 }
 
-.status-strip {
-  display: flex;
-  gap: 0.8rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.34rem 0.7rem;
-  border-radius: 999px;
-  background: rgba(52, 211, 153, 0.18);
-  color: var(--goal);
-  font-weight: 700;
-  font-size: 0.8rem;
-}
-
-.status-detail, .muted { color: var(--muted); }
+.muted { color: var(--muted); }
 
 /* ── Breadcrumbs ────────────────────────────────── */
 

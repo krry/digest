@@ -11,18 +11,14 @@
   <body>
     <div id="depth-bg"></div>
     <div id="app">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">Digest</p>
-          <h1>Focus makes the tree move.</h1>
+      <header class="titlebar">
+        <button id="hamburger" class="icon-button" aria-label="Menu">&#x2630;</button>
+        <span class="titlebar-title">Digest</span>
+        <div class="titlebar-right">
+          <button id="sync-button" class="sync-button" aria-label="Sync">&#x21BB;</button>
+          <span id="sync-dot" class="sync-dot"></span>
         </div>
-        <button id="sync-button" class="ghost-button">Sync</button>
       </header>
-
-      <section id="status-strip" class="status-strip">
-        <span id="status-pill" class="pill">Booting…</span>
-        <span id="status-detail" class="status-detail">Loading cached state.</span>
-      </section>
 
       <nav id="breadcrumbs" class="breadcrumbs"></nav>
 
