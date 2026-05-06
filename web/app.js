@@ -154,7 +154,7 @@ function renderBreadcrumbs() {
 
   const gistColor = syncStatusColor();
   const busy = state.status === "syncing" || state.pendingMutations.length > 0;
-  const crumbs = [`<button class="crumb${busy ? " crumb--spinning" : ""}" data-sync style="--crumb-color:${gistColor}">GIST</button>`];
+  const crumbs = [`<button class="crumb${busy ? " crumb--spinning" : ""}" data-sync data-focus="" style="--crumb-color:${gistColor}">GIST</button>`];
   for (const node of path) {
     const col = crumbColor(node.type);
     crumbs.push(`<button class="crumb" data-focus="${node.id}" style="--crumb-color:${col}">${escapeHtml(node.title)}</button>`);
