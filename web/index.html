@@ -25,13 +25,7 @@
 
       <nav id="breadcrumbs" class="breadcrumbs"></nav>
 
-      <section class="view-toggle">
-        <button id="children-view-button" class="toggle-button active">Children</button>
-        <button id="all-view-button" class="toggle-button">All Of This Level</button>
-      </section>
-
       <section class="sort-strip">
-        <label for="sort-select">Sort</label>
         <select id="sort-select">
           <option value="manual">Manual</option>
           <option value="title">Title</option>
@@ -40,6 +34,10 @@
           <option value="importance">Importance</option>
           <option value="due">Due</option>
         </select>
+        <div class="composer-mode-toggle">
+          <button id="children-view-button" type="button" class="mode-btn active">Children</button>
+          <button id="all-view-button" type="button" class="mode-btn">All</button>
+        </div>
       </section>
 
       <main>
@@ -59,14 +57,17 @@
         <div id="values-list" class="values-list"></div>
       </section>
 
-      <form id="composer" class="composer">
-        <div class="composer-row">
-          <select id="composer-mode">
-            <option value="child">Add Child</option>
-            <option value="sibling">Add Sibling</option>
-          </select>
+      <form id="composer" class="composer composer--collapsed">
+        <button id="composer-fab" type="button" class="composer-fab" aria-label="Add node">+</button>
+        <div class="composer-body">
           <input id="composer-input" type="text" placeholder="What belongs here?" autocomplete="off">
-          <button type="submit" class="primary-button">Add</button>
+          <div class="composer-actions">
+            <button type="submit" class="primary-button">Add</button>
+            <div id="composer-mode-toggle" class="composer-mode-toggle">
+              <button type="button" class="mode-btn active" data-mode="child">Child</button>
+              <button type="button" class="mode-btn" data-mode="sibling">Sibling</button>
+            </div>
+          </div>
         </div>
       </form>
     </div>

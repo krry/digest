@@ -18,6 +18,7 @@ const state = {
   syncCursor: null,
   sortMode: "manual",
   viewMode: "children",
+  composerMode: "child",
   status: "booting",
   detail: "Loading cached state.",
 };
@@ -36,7 +37,8 @@ const els = {
   valuesCount: document.querySelector("#values-count"),
   composer: document.querySelector("#composer"),
   composerInput: document.querySelector("#composer-input"),
-  composerMode: document.querySelector("#composer-mode"),
+  composerFab: document.querySelector("#composer-fab"),
+  composerModeToggle: document.querySelector("#composer-mode-toggle"),
   syncButton: document.querySelector("#sync-button"),
   childrenViewButton: document.querySelector("#children-view-button"),
   allViewButton: document.querySelector("#all-view-button"),
@@ -332,7 +334,7 @@ function renderToggles() {
 function composerPlaceholder() {
   const focus = nodeById(currentFocusId());
   const target =
-    els.composerMode.value === "sibling"
+    state.composerMode === "sibling"
       ? focus?.parentId
         ? `Sibling beside ${focus.title}`
         : "Another root goal"
@@ -340,6 +342,19 @@ function composerPlaceholder() {
         ? `${childType(focus.type)} under ${focus.title}`
         : "A new root goal";
   els.composerInput.placeholder = target;
+}
+
+function openComposer() {
+  els.composer.classList.remove("composer--collapsed");
+  els.composer.classList.add("composer--open");
+  els.composerInput.focus();
+}
+
+function closeComposer() {
+  els.composer.classList.add("composer--collapsed");
+  els.composer.classList.remove("composer--open");
+  els.composerInput.value = "";
+  composerPlaceholder();
 }
 
 async function persistAndRender() {
@@ -631,11 +646,11 @@ els.composer.addEventListener("submit", async (event) => {
     nodeId: generateId(),
     createdAt: nowIso(),
     title,
-    type: els.composerMode.value === "sibling" ? "add-sibling" : "add-child",
+    type: state.composerMode === "sibling" ? "add-sibling" : "add-child",
     parentId: currentFocusId(),
     siblingId: currentFocusId(),
   };
-  els.composerInput.value = "";
+  closeComposer();
   await queueMutation(mutation);
 });
 
@@ -652,7 +667,33 @@ els.sortSelect.addEventListener("change", async () => {
   state.sortMode = els.sortSelect.value;
   await persistAndRender();
 });
-els.composerMode.addEventListener("change", composerPlaceholder);
+els.composerFab.addEventListener("click", () => openComposer());
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && els.composer.classList.contains("composer--open")) {
+    closeComposer();
+  }
+});
+
+document.addEventListener("pointerdown", (e) => {
+  if (
+    els.composer.classList.contains("composer--open") &&
+    !els.composer.contains(e.target) &&
+    e.target !== els.composerFab
+  ) {
+    closeComposer();
+  }
+});
+
+els.composerModeToggle.addEventListener("click", (e) => {
+  const btn = e.target.closest(".mode-btn[data-mode]");
+  if (!btn) return;
+  state.composerMode = btn.dataset.mode;
+  els.composerModeToggle.querySelectorAll(".mode-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.mode === state.composerMode);
+  });
+  composerPlaceholder();
+});
 
 window.addEventListener("online", maybeSyncSoon);
 window.addEventListener("focus", maybeSyncSoon);
