@@ -682,12 +682,47 @@ main { margin-top: 1rem; }
 
 /* ── Gesture feedback on cards ──────────────────── */
 
+/* ── Swipe reveal layers ────────────────────────── */
+
+.card-wrap {
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.swipe-reveal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.08s linear;
+}
+
+.swipe-reveal--right {
+  background: linear-gradient(90deg, rgba(52,211,153,0.28) 0%, transparent 80%);
+  justify-content: flex-start;
+  padding-left: 1.4rem;
+}
+
+.swipe-reveal--left {
+  background: linear-gradient(270deg, rgba(251,191,36,0.28) 0%, transparent 80%);
+  justify-content: flex-end;
+  padding-right: 1.4rem;
+}
+
+.swipe-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
 .card {
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
-  will-change: transform;
+  position: relative;
+  z-index: 1;
 }
 
 .card--dragging {

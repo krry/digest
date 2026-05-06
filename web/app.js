@@ -205,35 +205,39 @@ function renderList() {
         const tags = node.tags && node.tags.length
           ? `<div class="card-tags">${node.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>` : "";
         return `
-        <article class="card ${escapeHtml(node.status)}" data-id="${node.id}" data-type="${node.type}">
-          ${impDot}
-          <div class="card-header">
-            <div class="card-body-text">
-              <div class="card-title" data-rename-id="${node.id}">${escapeHtml(node.title)}${node.status === "completed" ? " ✓" : ""}</div>
-              ${subtitle}
-              ${tags}
+        <div class="card-wrap">
+          <div class="swipe-reveal swipe-reveal--right"><span class="swipe-icon">✓</span></div>
+          <div class="swipe-reveal swipe-reveal--left"><span class="swipe-icon">★</span></div>
+          <article class="card ${escapeHtml(node.status)}" data-id="${node.id}" data-type="${node.type}">
+            ${impDot}
+            <div class="card-header">
+              <div class="card-body-text">
+                <div class="card-title" data-rename-id="${node.id}">${escapeHtml(node.title)}${node.status === "completed" ? " ✓" : ""}</div>
+                ${subtitle}
+                ${tags}
+              </div>
+              <button class="card-menu-btn" data-edit-details="${node.id}">&#x22EF;</button>
             </div>
-            <button class="card-menu-btn" data-edit-details="${node.id}">&#x22EF;</button>
-          </div>
 
-          <div class="card-detail-panel hidden" id="detail-${node.id}">
-            <div class="detail-row">
-              <label>Importance</label>
-              <div class="importance-picker">
-                ${[1,2,3,4,5].map((n) => `<button class="imp-btn${node.importance === n ? " active" : ""}" data-imp="${node.id}" data-val="${n}">${n}</button>`).join("")}
-                <button class="imp-btn" data-imp="${node.id}" data-val="">&mdash;</button>
+            <div class="card-detail-panel hidden" id="detail-${node.id}">
+              <div class="detail-row">
+                <label>Importance</label>
+                <div class="importance-picker">
+                  ${[1,2,3,4,5].map((n) => `<button class="imp-btn${node.importance === n ? " active" : ""}" data-imp="${node.id}" data-val="${n}">${n}</button>`).join("")}
+                  <button class="imp-btn" data-imp="${node.id}" data-val="">&mdash;</button>
+                </div>
+              </div>
+              <div class="detail-row">
+                <label>Due date</label>
+                <input class="detail-input" type="text" placeholder="YYYY, YYYY-MM, or YYYY-MM-DD" data-due="${node.id}" value="${escapeHtml(node.dueDate || "")}">
+              </div>
+              <div class="detail-row">
+                <label>Tags</label>
+                <input class="detail-input" type="text" placeholder="comma-separated" data-tags="${node.id}" value="${escapeHtml((node.tags || []).join(", "))}">
               </div>
             </div>
-            <div class="detail-row">
-              <label>Due date</label>
-              <input class="detail-input" type="text" placeholder="YYYY, YYYY-MM, or YYYY-MM-DD" data-due="${node.id}" value="${escapeHtml(node.dueDate || "")}">
-            </div>
-            <div class="detail-row">
-              <label>Tags</label>
-              <input class="detail-input" type="text" placeholder="comma-separated" data-tags="${node.id}" value="${escapeHtml((node.tags || []).join(", "))}">
-            </div>
-          </div>
-        </article>`;
+          </article>
+        </div>`;
       }
     )
     .join("");
@@ -288,9 +292,48 @@ function renderList() {
 }
 
 function attachCardGestures(listEl) {
-  const SWIPE_THRESHOLD = 60;
-  const LONG_PRESS_MS = 420;
+  const SWIPE_THRESHOLD = 72;
+  const LONG_PRESS_MS = 400;
   let g = null;
+  let rafId = null;
+
+  function cardWrap(card) { return card.closest(".card-wrap"); }
+  function revealEl(wrap, side) { return wrap?.querySelector(`.swipe-reveal--${side}`); }
+
+  function applySwipeFrame() {
+    if (!g || g.mode !== "swipe") return;
+    const dx = g.liveDx;
+    g.el.style.transform = `translateX(${dx}px)`;
+    const t = Math.min(Math.abs(dx) / SWIPE_THRESHOLD, 1);
+    const wrap = cardWrap(g.el);
+    const rightRev = revealEl(wrap, "right");
+    const leftRev  = revealEl(wrap, "left");
+    if (rightRev) rightRev.style.opacity = dx > 0 ? t : 0;
+    if (leftRev)  leftRev.style.opacity  = dx < 0 ? t : 0;
+    rafId = null;
+  }
+
+  function applyDragFrame() {
+    if (!g || g.mode !== "drag") return;
+    g.el.style.transform = `translateY(${g.liveDy}px)`;
+    rafId = null;
+  }
+
+  function snapBack(card) {
+    card.style.transition = "transform 0.25s cubic-bezier(0.25,1,0.5,1)";
+    card.style.transform = "";
+    const wrap = cardWrap(card);
+    [revealEl(wrap, "right"), revealEl(wrap, "left")].forEach((r) => {
+      if (r) r.style.opacity = 0;
+    });
+    card.addEventListener("transitionend", () => { card.style.transition = ""; }, { once: true });
+  }
+
+  function flyOff(card, dir) {
+    const W = window.innerWidth;
+    card.style.transition = "transform 0.28s cubic-bezier(0.4,0,1,1)";
+    card.style.transform = `translateX(${dir > 0 ? W : -W}px)`;
+  }
 
   listEl.addEventListener("pointerdown", (e) => {
     const card = e.target.closest(".card");
@@ -300,13 +343,15 @@ function attachCardGestures(listEl) {
       el: card,
       startX: e.clientX,
       startY: e.clientY,
+      liveDx: 0,
+      liveDy: 0,
       moved: false,
       mode: null,
-      dy: 0,
       timer: setTimeout(() => {
         if (g && !g.moved) {
           g.mode = "drag";
           card.classList.add("card--dragging");
+          card.style.willChange = "transform";
           navigator.vibrate?.(12);
         }
       }, LONG_PRESS_MS),
@@ -318,46 +363,51 @@ function attachCardGestures(listEl) {
     if (!g) return;
     const dx = e.clientX - g.startX;
     const dy = e.clientY - g.startY;
-    if (!g.moved && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+    if (!g.moved && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
       g.moved = true;
       clearTimeout(g.timer);
       if (g.mode !== "drag") {
         g.mode = Math.abs(dx) > Math.abs(dy) ? "swipe" : "scroll";
+        if (g.mode === "swipe") g.el.style.willChange = "transform";
       }
     }
     if (g.mode === "swipe") {
       e.preventDefault();
-      g.el.style.transform = `translateX(${dx}px)`;
-      const t = Math.min(Math.abs(dx) / SWIPE_THRESHOLD, 1);
-      g.el.style.background = dx > 0
-        ? `linear-gradient(135deg, rgba(52,211,153,${(t * 0.35).toFixed(2)}), rgba(255,255,255,0.07))`
-        : `linear-gradient(135deg, rgba(251,191,36,${(t * 0.35).toFixed(2)}), rgba(255,255,255,0.07))`;
-    }
-    if (g.mode === "drag") {
+      g.liveDx = dx;
+      if (!rafId) rafId = requestAnimationFrame(applySwipeFrame);
+    } else if (g.mode === "drag") {
       e.preventDefault();
-      g.dy = dy;
-      g.el.style.transform = `translateY(${dy}px)`;
+      g.liveDy = dy;
+      if (!rafId) rafId = requestAnimationFrame(applyDragFrame);
     }
   });
 
   listEl.addEventListener("pointerup", async (e) => {
     if (!g) return;
-    const { id, el, startX, startY, mode, moved, dy } = g;
+    const { id, el, startX, startY, mode, moved } = g;
     clearTimeout(g.timer);
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
     const dx = e.clientX - startX;
-    el.style.transform = "";
-    el.style.background = "";
+    const dy = e.clientY - startY;
+
+    el.style.willChange = "";
     el.classList.remove("card--dragging");
 
     if (mode === "swipe" && Math.abs(dx) >= SWIPE_THRESHOLD) {
-      if (dx > 0) {
-        await queueMutation({ id: generateId(), type: "complete-node", nodeId: id });
-      } else {
-        const node = nodeById(id);
-        const next = node ? ((node.importance ?? 0) % 5) + 1 : 1;
-        await queueMutation({ id: generateId(), type: "set-importance", nodeId: id, importance: next });
-      }
+      flyOff(el, dx);
+      el.addEventListener("transitionend", async () => {
+        if (dx > 0) {
+          await queueMutation({ id: generateId(), type: "complete-node", nodeId: id });
+        } else {
+          const node = nodeById(id);
+          const next = node ? ((node.importance ?? 0) % 5) + 1 : 1;
+          await queueMutation({ id: generateId(), type: "set-importance", nodeId: id, importance: next });
+        }
+      }, { once: true });
+    } else if (mode === "swipe") {
+      snapBack(el);
     } else if (mode === "drag" && Math.abs(dy) > 10) {
+      el.style.transform = "";
       const cardH = el.offsetHeight + 12;
       const steps = Math.round(dy / cardH);
       if (steps !== 0) {
@@ -366,6 +416,8 @@ function attachCardGestures(listEl) {
           await queueMutation({ id: generateId(), type: action, nodeId: id });
         }
       }
+    } else if (mode === "drag") {
+      el.style.transform = "";
     } else if (!moved) {
       const titleEl = e.target.closest("[data-rename-id]");
       if (titleEl) {
@@ -384,8 +436,9 @@ function attachCardGestures(listEl) {
   listEl.addEventListener("pointercancel", () => {
     if (!g) return;
     clearTimeout(g.timer);
-    g.el.style.transform = "";
-    g.el.style.background = "";
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    snapBack(g.el);
+    g.el.style.willChange = "";
     g.el.classList.remove("card--dragging");
     g = null;
   });
