@@ -1,28 +1,52 @@
 :root {
   color-scheme: dark;
 
-  /* Type palette */
-  --goal:  #34d399;   /* emerald */
-  --idea:  #60a5fa;   /* sapphire */
-  --step:  #c084fc;   /* amethyst */
-  --task:  #f87171;   /* ruby */
-  --free:  #94a3b8;
+  /* ── Egyptian gemstone palette ────────────────── */
+  --malachite:  #34d399;   /* goal */
+  --lapis:      #60a5fa;   /* idea */
+  --amethyst:   #c084fc;   /* step */
+  --carnelian:  #f87171;   /* task */
+  --slate:      #94a3b8;   /* free */
+  --gold:       #d4a62a;   /* importance / accent */
+  --sandstone:  #c8963a;   /* warm surface tint */
 
-  /* Glass material tokens */
-  --glass:        rgba(255, 255, 255, 0.072);
-  --glass-strong: rgba(255, 255, 255, 0.11);
-  --glass-border: rgba(255, 255, 255, 0.15);
-  --glass-hi:     inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  --shadow:       0 8px 32px rgba(0, 0, 0, 0.32), 0 2px 6px rgba(0, 0, 0, 0.2);
+  /* Node type aliases */
+  --goal: var(--malachite);
+  --idea: var(--lapis);
+  --step: var(--amethyst);
+  --task: var(--carnelian);
+  --free: var(--slate);
 
-  /* Text */
-  --ink:   rgba(255, 255, 255, 0.92);
-  --muted: rgba(255, 255, 255, 0.46);
-  --line:  rgba(255, 255, 255, 0.12);
+  /* ── Glass — warm sandstone tint ─────────────── */
+  --glass:        rgba(200, 150, 58, 0.06);
+  --glass-strong: rgba(200, 150, 58, 0.11);
+  --glass-border: rgba(220, 180, 100, 0.18);
+  --glass-hi:     inset 0 1px 0 rgba(255, 220, 140, 0.18);
 
-  /* Layout */
-  --radius: 0.25rem;
-  --radius-sm: 0.125rem;
+  /* ── Shadows ──────────────────────────────────── */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+  --shadow:    0 8px 32px rgba(0, 0, 0, 0.36), 0 2px 6px rgba(0, 0, 0, 0.22);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.44), 0 4px 12px rgba(0, 0, 0, 0.26);
+
+  /* ── Text ─────────────────────────────────────── */
+  --ink:   rgba(255, 240, 210, 0.93);   /* warm parchment white */
+  --muted: rgba(220, 190, 140, 0.48);   /* sandstone muted */
+  --line:  rgba(220, 180, 100, 0.14);
+
+  /* ── Spacing ──────────────────────────────────── */
+  --sp-1: 0.25rem;   /*  4px */
+  --sp-2: 0.5rem;    /*  8px */
+  --sp-3: 0.75rem;   /* 12px */
+  --sp-4: 1rem;      /* 16px */
+  --sp-5: 1.25rem;   /* 20px */
+  --sp-6: 1.5rem;    /* 24px */
+
+  /* ── Border radius — sandstone blocks ────────── */
+  --radius-xs:   4px;    /* tight: tags, small badges */
+  --radius-sm:   8px;    /* buttons, mode toggles */
+  --radius:     12px;    /* cards, panels */
+  --radius-lg:  16px;    /* card-wrap, composer open */
+  --radius-pill: 2rem;   /* crumbs, FAB */
 }
 
 * { box-sizing: border-box; }
@@ -30,13 +54,14 @@
 html, body {
   margin: 0;
   min-height: 100vh;
-  font-family: ui-rounded, "SF Pro Rounded", "Avenir Next", "Trebuchet MS", sans-serif;
+  font-family: "Cinzel", Georgia, "Times New Roman", serif;
+  font-size: 15px;
   background:
-  radial-gradient(ellipse 70% 55% at 10% 35%,  rgba(212, 175, 55, 0.30), transparent),   /* gold */
-  radial-gradient(ellipse 55% 65% at 88% 12%,  rgba(25,  74, 140, 0.28), transparent),   /* deep blue */
-  radial-gradient(ellipse 50% 60% at 55% 88%,  rgba(0,  120, 140, 0.24), transparent),   /* teal inlay */
-  radial-gradient(ellipse 40% 45% at 75% 55%,  rgba(180,  50,  35, 0.18), transparent),   /* red stone */
-  #1a1408; /* warm dark base */
+    radial-gradient(ellipse 70% 55% at 10% 35%,  rgba(212, 175, 55,  0.28), transparent),
+    radial-gradient(ellipse 55% 65% at 88% 12%,  rgba(25,   74, 140, 0.26), transparent),
+    radial-gradient(ellipse 50% 60% at 55% 88%,  rgba(0,   120, 140, 0.22), transparent),
+    radial-gradient(ellipse 40% 45% at 75% 55%,  rgba(180,  50,  35, 0.16), transparent),
+    #1a1206;
   color: var(--ink);
 }
 
@@ -120,7 +145,7 @@ h2, h3, p { margin: 0; }
   letter-spacing: 0.03em;
   white-space: nowrap;
   cursor: pointer;
-  border-radius: 2rem;
+  border-radius: var(--radius-pill);
   padding: 0.28rem 0.75rem;
   /* color and background set via --crumb-color inline */
   background: color-mix(in srgb, var(--crumb-color, #fff) 18%, transparent);
@@ -155,7 +180,7 @@ h2, h3, p { margin: 0; }
 select, input { font: inherit; }
 
 select, input {
-  border-radius: 1rem;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--glass-border);
   background: rgba(255, 255, 255, 0.08);
   color: var(--ink);
@@ -205,7 +230,7 @@ main { margin-top: 1rem; }
   z-index: 1;
 }
 
-.card-title { font-size: 1.04rem; line-height: 1.2; }
+.card-title { font-size: 1.04rem; line-height: 1.3; letter-spacing: 0.01em; }
 
 .card-subtitle {
   margin-top: 0.3rem;
@@ -246,7 +271,7 @@ main { margin-top: 1rem; }
 .primary-button {
   border-radius: var(--radius-sm);
   padding: 0.55rem 0.8rem;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 240, 210, 0.92);
   color: #080c18;
   font-weight: 700;
   border: none;
@@ -333,7 +358,7 @@ main { margin-top: 1rem; }
   background: var(--glass-strong);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow), var(--glass-hi);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   padding: 0.85rem;
 }
 
@@ -379,7 +404,7 @@ main { margin-top: 1rem; }
 
 .composer-mode-toggle {
   display: flex;
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   border: 1px solid var(--glass-border);
   background: rgba(255, 255, 255, 0.06);
@@ -426,7 +451,7 @@ main { margin-top: 1rem; }
 .tag {
   background: rgba(255, 255, 255, 0.10);
   border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-xs);
   color: var(--muted);
   font-size: 0.7rem;
   padding: 0.1rem 0.5rem;
@@ -437,7 +462,7 @@ main { margin-top: 1rem; }
 .card-detail-panel {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-xs);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -466,7 +491,7 @@ main { margin-top: 1rem; }
 .imp-btn {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 0.25rem;
+  border-radius: var(--radius-xs);
   color: var(--ink);
   cursor: pointer;
   font-size: 0.75rem;
@@ -645,7 +670,7 @@ main { margin-top: 1rem; }
 
 .card-wrap {
   position: relative;
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
