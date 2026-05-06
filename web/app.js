@@ -18,6 +18,7 @@ const state = {
   syncCursor: null,
   sortMode: "manual",
   viewMode: "children",
+  showCompleted: false,
   route: "main",
   status: "booting",
   detail: "Loading cached state.",
@@ -40,6 +41,7 @@ const els = {
   composerInput: document.querySelector("#composer-input"),
   childrenViewButton: document.querySelector("#children-view-button"),
   allViewButton: document.querySelector("#all-view-button"),
+  showCompletedBtn: document.querySelector("#show-completed-btn"),
   sortSelect: document.querySelector("#sort-select"),
 };
 
@@ -83,7 +85,7 @@ function nodeById(id) {
 
 function childrenOf(parentId) {
   return state.nodes
-    .filter((node) => node.parentId === parentId && node.status !== "archived")
+    .filter((node) => node.parentId === parentId && node.status !== "archived" && (state.showCompleted || node.status !== "completed"))
     .map((node, index) => ({ ...node, sortIndex: index }));
 }
 
@@ -93,7 +95,7 @@ function visibleNodes() {
     const focus = nodeById(focusId);
     const type = childType(focus?.type);
     return state.nodes
-      .filter((node) => node.type === type && node.status !== "archived")
+      .filter((node) => node.type === type && node.status !== "archived" && (state.showCompleted || node.status !== "completed"))
       .map((node, index) => ({ ...node, sortIndex: index }));
   }
   return childrenOf(focusId);
@@ -354,7 +356,23 @@ function attachCardGestures(listEl) {
 
   function applyDragFrame() {
     if (!g || g.mode !== "drag") return;
-    g.el.style.transform = `translateY(${g.liveDy}px)`;
+    // Move the fixed-lifted wrap
+    g.wrap.style.top = (g.liftTop + g.liveDy) + "px";
+
+    // Reorder placeholder: find where the card center is among siblings
+    const centerY = g.liftTop + g.liveDy + g.wrapH / 2;
+    const siblings = Array.from(listEl.querySelectorAll(".card-wrap:not(.drag-placeholder)"));
+    let insertBefore = null;
+    for (const sib of siblings) {
+      if (sib === g.wrap) continue;
+      const rect = sib.getBoundingClientRect();
+      if (centerY < rect.top + rect.height / 2) { insertBefore = sib; break; }
+    }
+    if (insertBefore) {
+      if (g.placeholder.nextSibling !== insertBefore) listEl.insertBefore(g.placeholder, insertBefore);
+    } else {
+      if (listEl.lastElementChild !== g.placeholder) listEl.appendChild(g.placeholder);
+    }
     rafId = null;
   }
 
@@ -390,8 +408,21 @@ function attachCardGestures(listEl) {
         if (g && !g.moved) {
           g.mode = "drag";
           card.classList.add("card--dragging");
-          card.style.willChange = "transform";
           navigator.vibrate?.(12);
+          // Lift wrap to fixed so it escapes overflow:hidden stacking context
+          const wrap = cardWrap(card);
+          const rect = wrap.getBoundingClientRect();
+          g.wrap = wrap;
+          g.liftTop = rect.top;
+          g.wrapH  = rect.height;
+          // Placeholder holds the space in the list while wrap is fixed
+          const ph = document.createElement("div");
+          ph.className = "drag-placeholder";
+          ph.style.height = rect.height + "px";
+          g.placeholder = ph;
+          listEl.insertBefore(ph, wrap);
+          g.originalIndex = Array.from(listEl.querySelectorAll(".card-wrap")).indexOf(wrap);
+          wrap.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;z-index:200;will-change:top;`;
         }
       }, LONG_PRESS_MS),
     };
@@ -445,18 +476,23 @@ function attachCardGestures(listEl) {
       }, { once: true });
     } else if (mode === "swipe") {
       snapBack(el);
-    } else if (mode === "drag" && Math.abs(dy) > 10) {
-      el.style.transform = "";
-      const cardH = el.offsetHeight + 12;
-      const steps = Math.round(dy / cardH);
+    } else if (mode === "drag") {
+      const wrap = g.wrap;
+      const ph   = g.placeholder;
+      if (wrap) wrap.style.cssText = "";
+      if (ph?.parentNode) { ph.parentNode.insertBefore(wrap, ph); ph.remove(); }
+
+      // Compute how many slots the placeholder moved relative to original position
+      const allWraps = Array.from(listEl.querySelectorAll(".card-wrap"));
+      const finalIdx    = allWraps.indexOf(wrap);
+      const originalIdx = g.originalIndex;
+      const steps = finalIdx - originalIdx;
       if (steps !== 0) {
         const action = steps > 0 ? "move-node-down" : "move-node-up";
         for (let i = 0; i < Math.abs(steps); i++) {
           await queueMutation({ id: generateId(), type: action, nodeId: id });
         }
       }
-    } else if (mode === "drag") {
-      el.style.transform = "";
     } else if (!moved) {
       if (!e.target.closest("button") && !e.target.closest("input") && !e.target.closest(".card-detail-panel")) {
         const node = nodeById(id);
@@ -473,7 +509,15 @@ function attachCardGestures(listEl) {
     if (!g) return;
     clearTimeout(g.timer);
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-    snapBack(g.el);
+    if (g.mode === "drag" && g.wrap) {
+      g.wrap.style.cssText = "";
+      if (g.placeholder?.parentNode) {
+        g.placeholder.parentNode.insertBefore(g.wrap, g.placeholder);
+        g.placeholder.remove();
+      }
+    } else {
+      snapBack(g.el);
+    }
     g.el.style.willChange = "";
     g.el.classList.remove("card--dragging");
     g = null;
@@ -530,6 +574,7 @@ function renderValues() {
 function renderToggles() {
   els.childrenViewButton.classList.toggle("active", state.viewMode === "children");
   els.allViewButton.classList.toggle("active", state.viewMode === "all");
+  els.showCompletedBtn.classList.toggle("active", state.showCompleted);
   els.sortSelect.value = state.sortMode;
 }
 
@@ -561,6 +606,7 @@ function snapshotState() {
     syncCursor: state.syncCursor,
     sortMode: state.sortMode,
     viewMode: state.viewMode,
+    showCompleted: state.showCompleted,
   };
 }
 
@@ -894,6 +940,10 @@ els.allViewButton.addEventListener("click", async () => {
 });
 els.sortSelect.addEventListener("change", async () => {
   state.sortMode = els.sortSelect.value;
+  await persistAndRender();
+});
+els.showCompletedBtn.addEventListener("click", async () => {
+  state.showCompleted = !state.showCompleted;
   await persistAndRender();
 });
 document.addEventListener("keydown", (e) => {
