@@ -77,40 +77,15 @@ body {
   overflow: hidden;
 }
 
-/* ── Sync button + dot ──────────────────────────── */
-
-.sync-button {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
-  padding: 0.2rem 0.1rem;
-  flex-shrink: 0;
-  transition: color 0.2s ease;
-}
-
-.sync-button.spinning {
-  animation: spin 0.9s linear infinite;
-}
+/* ── Sync spin (on GIST crumb) ──────────────────── */
 
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-.sync-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-  flex-shrink: 0;
-  transition: background 0.3s ease;
+.crumb--spinning {
+  animation: spin 1.2s linear infinite;
 }
-
-.sync-dot--green  { background: #34d399; }
-.sync-dot--yellow { background: #fbbf24; }
-.sync-dot--red    { background: #f87171; }
 
 h2, h3, p { margin: 0; }
 

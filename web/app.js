@@ -28,7 +28,6 @@ let syncInFlight = false;
 let retryTimer = null;
 
 const els = {
-  syncDot: document.querySelector("#sync-dot"),
   valuesPage: document.querySelector("#values-page"),
   valuesBack: document.querySelector("#values-back"),
   navValues: document.querySelector("#nav-values"),
@@ -42,7 +41,6 @@ const els = {
   composerInput: document.querySelector("#composer-input"),
   composerFab: document.querySelector("#composer-fab"),
   composerModeToggle: document.querySelector("#composer-mode-toggle"),
-  syncButton: document.querySelector("#sync-button"),
   childrenViewButton: document.querySelector("#children-view-button"),
   allViewButton: document.querySelector("#all-view-button"),
   sortSelect: document.querySelector("#sort-select"),
@@ -126,21 +124,17 @@ function setStatus(status, detail) {
   renderStatus();
 }
 
-function renderStatus() {
-  const btn = els.syncButton;
-  const dot = els.syncDot;
+function syncStatusColor() {
   const pending = state.pendingMutations.length;
+  if (state.status === "synced" && pending === 0) return "#34d399";
+  if (state.status === "error" || state.status === "offline") return "#f87171";
+  if (state.status === "syncing" || pending > 0) return "#fbbf24";
+  return "rgba(255,255,255,0.5)"; // booting/starting
+}
 
-  // Spinning arrow while syncing or mutations pending
-  const busy = state.status === "syncing" || pending > 0;
-  btn.classList.toggle("spinning", busy);
-
-  // Dot color: green=synced, yellow=pending/local, red=error/offline, grey=starting
-  dot.className = "sync-dot";
-  if (state.status === "synced" && pending === 0) dot.classList.add("sync-dot--green");
-  else if (state.status === "error" || state.status === "offline") dot.classList.add("sync-dot--red");
-  else if (state.status === "starting" || state.status === "booting") { /* grey default */ }
-  else dot.classList.add("sync-dot--yellow");
+function renderStatus() {
+  // GIST crumb carries the sync color — re-render breadcrumbs to reflect new state
+  renderBreadcrumbs();
 }
 
 const TYPE_PLURAL = { goal: "Goals", idea: "Ideas", step: "Steps", task: "Tasks", free: "Notes" };
@@ -158,7 +152,9 @@ function renderBreadcrumbs() {
   const listLabel = TYPE_PLURAL[listType];
   const listColor = crumbColor(listType);
 
-  const crumbs = [`<button class="crumb" data-focus="" style="--crumb-color: rgba(255,255,255,0.7)">GIST</button>`];
+  const gistColor = syncStatusColor();
+  const busy = state.status === "syncing" || state.pendingMutations.length > 0;
+  const crumbs = [`<button class="crumb${busy ? " crumb--spinning" : ""}" data-sync style="--crumb-color:${gistColor}">GIST</button>`];
   for (const node of path) {
     const col = crumbColor(node.type);
     crumbs.push(`<button class="crumb" data-focus="${node.id}" style="--crumb-color:${col}">${escapeHtml(node.title)}</button>`);
@@ -166,6 +162,7 @@ function renderBreadcrumbs() {
   crumbs.push(`<span class="crumb crumb--current" style="--crumb-color:${listColor}">${listLabel}</span>`);
 
   els.breadcrumbs.innerHTML = crumbs.join("");
+  els.breadcrumbs.querySelector("[data-sync]")?.addEventListener("click", syncIfPossible);
   els.breadcrumbs.querySelectorAll("[data-focus]").forEach((button) => {
     button.addEventListener("click", () => {
       const focus = button.getAttribute("data-focus");
@@ -898,7 +895,6 @@ els.composer.addEventListener("submit", async (event) => {
   await queueMutation(mutation);
 });
 
-els.syncButton.addEventListener("click", syncIfPossible);
 
 els.navValues.addEventListener("click", () => {
   state.route = "values";
