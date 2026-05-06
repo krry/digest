@@ -53,7 +53,6 @@ body {
 
 /* ── Glass surface ──────────────────────────────── */
 
-.titlebar,
 .focus-card,
 .values-panel,
 .card,
@@ -109,11 +108,13 @@ body {
 /* ── Title bar ──────────────────────────────────── */
 
 .titlebar {
-  border-radius: var(--radius);
   padding: 0.6rem 0.75rem;
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  background: none;
+  border: none;
+  box-shadow: none;
 }
 
 .titlebar-title {
@@ -317,6 +318,14 @@ main { margin-top: 1rem; }
 }
 
 .icon-button { padding: 0.5rem 0.7rem; }
+
+#hamburger {
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  font-size: 1.1rem;
+  color: var(--muted);
+}
 
 /* ── Empty state ────────────────────────────────── */
 
