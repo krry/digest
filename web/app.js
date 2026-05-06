@@ -684,7 +684,7 @@ function applyMutationLocally(mutation) {
       status: "active",
       parentId,
       importance: null,
-      dueDate: null,
+      dueDate: mutation.dueDate ?? null,
       tags: [],
       createdAt: mutation.createdAt,
       completedAt: null,
@@ -924,14 +924,15 @@ async function boot() {
 
 els.composer.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const title = els.composerInput.value.trim();
-  if (!title) return;
-  const focus = nodeById(currentFocusId());
+  const raw = els.composerInput.value.trim();
+  if (!raw) return;
+  const { title, dueDate } = parseNaturalDate(raw);
   const mutation = {
     id: generateId(),
     nodeId: generateId(),
     createdAt: nowIso(),
     title,
+    dueDate: dueDate ?? null,
     type: "add-child",
     parentId: currentFocusId(),
   };
