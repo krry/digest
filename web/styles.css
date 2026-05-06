@@ -56,8 +56,7 @@ body {
 .focus-card,
 .values-panel,
 .card,
-.empty-state,
-.sort-strip {
+.empty-state {
   background: var(--glass);
   border: 1px solid var(--glass-border);
   backdrop-filter: blur(28px) saturate(160%);
@@ -164,14 +163,6 @@ body {
 
 h2, h3, p { margin: 0; }
 
-/* ── Sort strip ─────────────────────────────────── */
-
-.sort-strip {
-  margin-top: 0.85rem;
-  border-radius: 18px;
-  padding: 0.85rem 1rem;
-}
-
 .muted { color: var(--muted); }
 
 /* ── Breadcrumbs ────────────────────────────────── */
@@ -196,13 +187,17 @@ h2, h3, p { margin: 0; }
 
 .crumb.active { color: var(--ink); font-weight: 700; }
 
-/* ── Sort strip ─────────────────────────────────── */
+/* ── Sort strip (bare, below list) ─────────────── */
 
 .sort-strip {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 0.75rem;
+  padding: 0.75rem 0.25rem;
+  background: none;
+  border: none;
+  box-shadow: none;
 }
 
 /* ── Form elements ──────────────────────────────── */
@@ -714,4 +709,33 @@ main { margin-top: 1rem; }
 .card--ghost-label {
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+/* ── Importance corner (top-left fold) ──────────── */
+
+.card-imp {
+  position: absolute;
+  top: 0; left: 0;
+  width: 0; height: 0;
+  border-style: solid;
+  border-width: 26px 26px 0 0;
+  border-color: #fbbf24 transparent transparent transparent;
+  opacity: calc(var(--imp, 0) * 0.17 + 0.08);
+  z-index: 2;
+}
+
+/* ── Card menu (⋯) button ───────────────────────── */
+
+.card-menu-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
 }

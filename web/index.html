@@ -26,7 +26,16 @@
 
       <nav id="breadcrumbs" class="breadcrumbs"></nav>
 
-      <section class="sort-strip">
+      <main>
+        <section id="focus-card" class="focus-card hidden"></section>
+        <section id="list" class="list"></section>
+        <section id="empty-state" class="empty-state hidden">
+          <p>Nothing here yet.</p>
+          <p class="muted">Add something small and let the structure emerge.</p>
+        </section>
+      </main>
+
+      <div class="sort-strip">
         <select id="sort-select">
           <option value="manual">Manual</option>
           <option value="title">Title</option>
@@ -39,16 +48,7 @@
           <button id="children-view-button" type="button" class="mode-btn active">Children</button>
           <button id="all-view-button" type="button" class="mode-btn">All</button>
         </div>
-      </section>
-
-      <main>
-        <section id="focus-card" class="focus-card hidden"></section>
-        <section id="list" class="list"></section>
-        <section id="empty-state" class="empty-state hidden">
-          <p>Nothing here yet.</p>
-          <p class="muted">Add something small and let the structure emerge.</p>
-        </section>
-      </main>
+      </div>
 
       <form id="composer" class="composer composer--collapsed">
         <button id="composer-fab" type="button" class="composer-fab" aria-label="Add node">+</button>

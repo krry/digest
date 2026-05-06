@@ -190,20 +190,22 @@ function renderList() {
         const subtitleParts = [];
         if (node.status !== "active") subtitleParts.push(escapeHtml(node.status));
         if (node.dueDate) subtitleParts.push(escapeHtml(node.dueDate));
-        if (node.importance != null) subtitleParts.push(`imp:${node.importance}`);
         const subtitle = subtitleParts.length
           ? `<div class="card-subtitle">${subtitleParts.join(" · ")}</div>` : "";
+        const impDot = node.importance != null
+          ? `<div class="card-imp" style="--imp:${node.importance}"></div>` : "";
         const tags = node.tags && node.tags.length
           ? `<div class="card-tags">${node.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>` : "";
         return `
         <article class="card ${escapeHtml(node.status)}" data-id="${node.id}" data-type="${node.type}">
+          ${impDot}
           <div class="card-header">
             <div class="card-body-text">
               <div class="card-title" data-rename-id="${node.id}">${escapeHtml(node.title)}${node.status === "completed" ? " ✓" : ""}</div>
               ${subtitle}
               ${tags}
             </div>
-            <button class="icon-button" data-edit-details="${node.id}" style="position:relative;z-index:2">&#x22EF;</button>
+            <button class="card-menu-btn" data-edit-details="${node.id}">&#x22EF;</button>
           </div>
 
           <div class="card-detail-panel hidden" id="detail-${node.id}">
