@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import copy
 import datetime
 import json
 import pathlib
 import secrets
 import sqlite3
+import threading
 from typing import Any
 
 from digest.paths import (
@@ -56,19 +58,33 @@ class DigestStore:
         self.goals_path = goals_path
         self.values_path = values_path
         self.checkins_path = checkins_path
+        self._initialized = False
+        self._init_lock = threading.Lock()
 
     def ensure_ready(self):
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.connect() as conn:
-            self._create_schema(conn)
-            if self._is_uninitialized(conn):
-                self._bootstrap_from_json(conn)
+        with self._init_lock:
+            if self._initialized:
+                return
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.connect() as conn:
+                self._create_schema(conn)
+                if self._is_uninitialized(conn):
+                    self._bootstrap_from_json(conn)
+            self._initialized = True
 
-    def connect(self) -> sqlite3.Connection:
+    @contextlib.contextmanager
+    def connect(self):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("pragma foreign_keys = on")
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _create_schema(self, conn: sqlite3.Connection):
         conn.executescript(
