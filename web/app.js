@@ -18,7 +18,6 @@ const state = {
   syncCursor: null,
   sortMode: "manual",
   viewMode: "children",
-  composerMode: "child",
   route: "main",
   status: "booting",
   detail: "Loading cached state.",
@@ -40,7 +39,6 @@ const els = {
   composer: document.querySelector("#composer"),
   composerInput: document.querySelector("#composer-input"),
   composerFab: document.querySelector("#composer-fab"),
-  composerModeToggle: document.querySelector("#composer-mode-toggle"),
   childrenViewButton: document.querySelector("#children-view-button"),
   allViewButton: document.querySelector("#all-view-button"),
   sortSelect: document.querySelector("#sort-select"),
@@ -295,10 +293,6 @@ function renderList() {
   ghost.innerHTML = `<div class="card-title card--ghost-label">+ add ${listType}</div>`;
   // When list is empty, ghost acts as first child; otherwise it adds a sibling
   ghost.addEventListener("click", () => {
-    state.composerMode = nodes.length === 0 ? "child" : "sibling";
-    els.composerModeToggle.querySelectorAll(".mode-btn").forEach((b) => {
-      b.classList.toggle("active", b.dataset.mode === state.composerMode);
-    });
     openComposer();
   });
   ghostWrap.appendChild(ghost);
@@ -542,15 +536,9 @@ function renderToggles() {
 
 function composerPlaceholder() {
   const focus = nodeById(currentFocusId());
-  const target =
-    state.composerMode === "sibling"
-      ? focus?.parentId
-        ? `Sibling beside ${focus.title}`
-        : "Another root goal"
-      : focus
-        ? `${childType(focus.type)} under ${focus.title}`
-        : "A new root goal";
-  els.composerInput.placeholder = target;
+  els.composerInput.placeholder = focus
+    ? `New ${childType(focus.type)}…`
+    : "New goal…";
 }
 
 function openComposer() {
@@ -887,9 +875,8 @@ els.composer.addEventListener("submit", async (event) => {
     nodeId: generateId(),
     createdAt: nowIso(),
     title,
-    type: state.composerMode === "sibling" ? "add-sibling" : "add-child",
+    type: "add-child",
     parentId: currentFocusId(),
-    siblingId: currentFocusId(),
   };
   closeComposer();
   await queueMutation(mutation);
@@ -935,15 +922,7 @@ document.addEventListener("pointerdown", (e) => {
   }
 });
 
-els.composerModeToggle.addEventListener("click", (e) => {
-  const btn = e.target.closest(".mode-btn[data-mode]");
-  if (!btn) return;
-  state.composerMode = btn.dataset.mode;
-  els.composerModeToggle.querySelectorAll(".mode-btn").forEach((b) => {
-    b.classList.toggle("active", b.dataset.mode === state.composerMode);
-  });
-  composerPlaceholder();
-});
+
 
 window.addEventListener("online", maybeSyncSoon);
 window.addEventListener("focus", maybeSyncSoon);
