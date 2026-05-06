@@ -44,6 +44,7 @@ body {
 }
 
 #app {
+  position: relative;
   width: min(100%, 48rem);
   margin: 0 auto;
   padding: 1rem 1rem 7rem;
@@ -694,4 +695,23 @@ main { margin-top: 1rem; }
   outline: none;
   padding: 0;
   width: 100%;
+}
+
+/* ── Ghost sibling card ─────────────────────────── */
+
+.card--ghost {
+  opacity: 0.42;
+  border-style: dashed;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.card--ghost:hover,
+.card--ghost:active {
+  opacity: 0.7;
+}
+
+.card--ghost-label {
+  color: var(--muted);
+  font-size: 0.95rem;
 }

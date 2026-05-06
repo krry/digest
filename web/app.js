@@ -174,14 +174,11 @@ function renderFocusCard() {
     return;
   }
   els.focusCard.classList.remove("hidden");
-  els.focusCard.innerHTML = `
-    <div class="focus-meta">
-      <span>${badgeFor(node.type)}</span>
-      <span>${escapeHtml(node.status)}</span>
-      <span>${childrenOf(node.id).length} children</span>
-    </div>
-    <h2 class="focus-title">${escapeHtml(node.title)}</h2>
-  `;
+  els.focusCard.dataset.type = node.type;
+  const typeRgb = { goal: "52,211,153", idea: "96,165,250", step: "192,132,252", task: "248,113,113", free: "148,163,184" };
+  const rgb = typeRgb[node.type] || typeRgb.free;
+  els.focusCard.style.background = `linear-gradient(135deg, rgba(${rgb}, 0.30) 0%, rgba(255,255,255,0.07) 65%)`;
+  els.focusCard.innerHTML = `<h2 class="focus-title">${escapeHtml(node.title)}</h2>`;
 }
 
 function renderList() {
@@ -208,11 +205,7 @@ function renderList() {
             </div>
             <button class="icon-button" data-edit-details="${node.id}" style="position:relative;z-index:2">&#x22EF;</button>
           </div>
-          <div class="card-actions">
-            <button class="action-button" data-archive="${node.id}">Archive</button>
-            <button class="action-button" data-indent="${node.id}">&#x2192;</button>
-            <button class="action-button" data-unindent="${node.id}">&#x2190;</button>
-          </div>
+
           <div class="card-detail-panel hidden" id="detail-${node.id}">
             <div class="detail-row">
               <label>Importance</label>
@@ -237,27 +230,19 @@ function renderList() {
 
   attachCardGestures(els.list);
 
-  els.list.querySelectorAll("[data-archive]").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const id = btn.getAttribute("data-archive");
-      if (id) await queueMutation({ id: generateId(), type: "archive-node", nodeId: id });
+  // Ghost sibling card — appended after real cards
+  const ghost = document.createElement("article");
+  ghost.className = "card card--ghost";
+  ghost.innerHTML = '<div class="card-title card--ghost-label">+ sibling</div>';
+  ghost.addEventListener("click", () => {
+    state.composerMode = "sibling";
+    els.composerModeToggle.querySelectorAll(".mode-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.mode === "sibling");
     });
+    openComposer();
   });
-  els.list.querySelectorAll("[data-indent]").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const id = btn.getAttribute("data-indent");
-      if (id) await queueMutation({ id: generateId(), type: "indent-node", nodeId: id });
-    });
-  });
-  els.list.querySelectorAll("[data-unindent]").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const id = btn.getAttribute("data-unindent");
-      if (id) await queueMutation({ id: generateId(), type: "unindent-node", nodeId: id });
-    });
-  });
+  els.list.appendChild(ghost);
+
   els.list.querySelectorAll("[data-edit-details]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
