@@ -55,6 +55,24 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function parseNaturalDate(rawTitle) {
+  const ref = new Date();
+  const results = chrono.parse(rawTitle, ref, { forwardDate: true });
+  if (!results.length) return { title: rawTitle, dueDate: null };
+
+  const hit = results[0];
+  const cleaned = (rawTitle.slice(0, hit.index) + rawTitle.slice(hit.index + hit.text.length)).trim();
+  if (!cleaned) return { title: rawTitle, dueDate: null };
+
+  const d = hit.start.date();
+  const hasTime = hit.start.isCertain("hour");
+  const pad = (n) => String(n).padStart(2, "0");
+  const dueDate = hasTime
+    ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+    : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return { title: cleaned, dueDate };
+}
+
 function childType(parentType) {
   return {
     goal: "idea",
