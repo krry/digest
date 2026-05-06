@@ -151,7 +151,7 @@ function renderBreadcrumbs() {
   const path = pathNodes();
   const focus = path[path.length - 1];
   const listLabel = TYPE_PLURAL[focus ? childType(focus.type) : "goal"];
-  const crumbs = [`<button class="crumb" data-focus="">Goals</button>`];
+  const crumbs = [`<button class="crumb" data-focus="">GIST</button>`];
   for (const node of path) {
     crumbs.push(`<span class="crumb-sep">/</span>`);
     crumbs.push(`<button class="crumb" data-focus="${node.id}">${node.title}</button>`);
