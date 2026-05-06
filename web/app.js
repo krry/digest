@@ -140,6 +140,27 @@ function sortedNodes(nodes) {
   return [...nodes].sort(SORTERS[state.sortMode] || SORTERS.manual);
 }
 
+function nextNodes() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() + 7);
+
+  return state.nodes
+    .filter((node) => {
+      if (!node.dueDate || node.status !== "active") return false;
+      const due = new Date(node.dueDate.length === 10 ? node.dueDate + "T00:00:00" : node.dueDate);
+      due.setHours(0, 0, 0, 0);
+      return due <= cutoff;
+    })
+    .sort((a, b) => {
+      const aDate = a.dueDate.slice(0, 10);
+      const bDate = b.dueDate.slice(0, 10);
+      if (aDate !== bDate) return aDate.localeCompare(bDate);
+      return (b.importance || 0) - (a.importance || 0);
+    });
+}
+
 function pathNodes() {
   const path = [];
   let cursor = currentFocusId();
@@ -180,6 +201,24 @@ function crumbColor(type) {
 }
 
 function renderBreadcrumbs() {
+  if (state.route === "next") {
+    const gistColor = syncStatusColor();
+    const busy = state.status === "syncing" || state.pendingMutations.length > 0;
+    const btn = document.createElement("button");
+    btn.className = "crumb" + (busy ? " crumb--spinning" : "");
+    btn.setAttribute("data-sync", "");
+    btn.style.setProperty("--crumb-color", gistColor);
+    btn.textContent = "GIST";
+    btn.addEventListener("click", syncIfPossible);
+    const label = document.createElement("span");
+    label.className = "crumb crumb--current";
+    label.style.setProperty("--crumb-color", "rgba(255,255,255,0.4)");
+    label.textContent = "Next";
+    els.breadcrumbs.textContent = "";
+    els.breadcrumbs.appendChild(btn);
+    els.breadcrumbs.appendChild(label);
+    return;
+  }
   const path = pathNodes();
   const focus = path[path.length - 1];
   const listType = focus ? childType(focus.type) : "goal";
@@ -363,6 +402,83 @@ function renderList() {
       const id = input.getAttribute("data-tags");
       const tags = input.value.split(",").map((t) => t.trim()).filter(Boolean);
       if (id) await queueMutation({ id: generateId(), type: "set-tags", nodeId: id, tags });
+    });
+  });
+}
+
+function renderNext() {
+  els.emptyState.classList.add("hidden");
+  const nodes = nextNodes();
+
+  if (!nodes.length) {
+    const wrap = document.createElement("div");
+    wrap.className = "card-wrap";
+    const ghost = document.createElement("article");
+    ghost.className = "card card--ghost";
+    const titleEl = document.createElement("div");
+    titleEl.className = "card-title card--ghost-label";
+    titleEl.textContent = "Nothing pressing";
+    const subtitleEl = document.createElement("div");
+    subtitleEl.className = "card-subtitle";
+    subtitleEl.style.cssText = "text-align:center;margin-top:0.25rem";
+    subtitleEl.textContent = "Add a due date to surface items here.";
+    ghost.appendChild(titleEl);
+    ghost.appendChild(subtitleEl);
+    wrap.appendChild(ghost);
+    els.list.textContent = "";
+    els.list.appendChild(wrap);
+    return;
+  }
+
+  els.list.textContent = "";
+  nodes.forEach((node) => {
+    const label = relativeDueLabel(node.dueDate);
+
+    const wrap = document.createElement("div");
+    wrap.className = "card-wrap";
+
+    const card = document.createElement("article");
+    card.className = "card " + escapeHtml(node.status);
+    card.dataset.id = node.id;
+    card.dataset.type = node.type;
+
+    const header = document.createElement("div");
+    header.className = "card-header";
+
+    const bodyText = document.createElement("div");
+    bodyText.className = "card-body-text";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "card-title";
+    titleEl.textContent = node.title;
+    bodyText.appendChild(titleEl);
+
+    if (label) {
+      const dueEl = document.createElement("span");
+      dueEl.className = "due-label" + (label.overdue ? " due-label--overdue" : "");
+      dueEl.textContent = label.text;
+      bodyText.appendChild(dueEl);
+    }
+
+    header.appendChild(bodyText);
+    card.appendChild(header);
+    wrap.appendChild(card);
+    els.list.appendChild(wrap);
+
+    card.addEventListener("click", () => {
+      const n = nodeById(card.dataset.id);
+      if (!n) return;
+      const parentPath = [];
+      let cursor = n.parentId;
+      while (cursor) {
+        const p = nodeById(cursor);
+        if (!p) break;
+        parentPath.unshift(p.id);
+        cursor = p.parentId;
+      }
+      state.focusStack = [...parentPath, n.id];
+      state.route = "all";
+      persistAndRender();
     });
   });
 }
@@ -684,10 +800,17 @@ function render() {
   }
   renderDepthBackground();
   renderBreadcrumbs();
-  renderFocusCard();
-  renderList();
   renderToggles();
   composerPlaceholder();
+
+  if (state.route === "next") {
+    els.focusCard.classList.add("hidden");
+    els.focusCard.textContent = "";
+    renderNext();
+  } else {
+    renderFocusCard();
+    renderList();
+  }
 }
 
 function applyMutationLocally(mutation) {
