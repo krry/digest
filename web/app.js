@@ -175,10 +175,10 @@ function renderList() {
   els.list.innerHTML = nodes
     .map(
       (node) => `
-        <article class="card ${escapeHtml(node.status)}" data-id="${node.id}">
+        <article class="card ${escapeHtml(node.status)}" data-id="${node.id}" data-type="${node.type}">
           <div class="card-header">
             <div>
-              <div class="card-title">${badgeFor(node.type)} ${escapeHtml(node.title)}${node.status === "completed" ? " ✓" : ""}</div>
+              <div class="card-title">${escapeHtml(node.title)}${node.status === "completed" ? " ✓" : ""}</div>
               <div class="card-subtitle">${escapeHtml(node.status)} · ${escapeHtml(node.dueDate || "no due date")} · imp:${node.importance ?? "—"} · ${childrenOf(node.id).length} children</div>
               ${node.tags && node.tags.length ? `<div class="card-tags">${node.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
             </div>
