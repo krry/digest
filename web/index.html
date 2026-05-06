@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Digest</title>
-    <meta name="theme-color" content="#f4efe4">
+    <meta name="theme-color" content="#080c18">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="stylesheet" href="/styles.css">
   </head>
@@ -19,6 +19,10 @@
           <span id="sync-dot" class="sync-dot"></span>
         </div>
       </header>
+
+      <div id="hamburger-menu" class="hamburger-menu hidden">
+        <button id="nav-values" class="menu-item">Values</button>
+      </div>
 
       <nav id="breadcrumbs" class="breadcrumbs"></nav>
 
@@ -46,14 +50,6 @@
         </section>
       </main>
 
-      <section class="values-panel">
-        <div class="panel-header">
-          <h2>Values</h2>
-          <span id="values-count" class="muted"></span>
-        </div>
-        <div id="values-list" class="values-list"></div>
-      </section>
-
       <form id="composer" class="composer composer--collapsed">
         <button id="composer-fab" type="button" class="composer-fab" aria-label="Add node">+</button>
         <div class="composer-body">
@@ -69,6 +65,16 @@
       </form>
     </div>
 
+    <!-- Values overlay page -->
+    <div id="values-page" class="values-page hidden">
+      <div class="values-page-header glass-panel">
+        <button id="values-back" class="icon-button">&#x2190;</button>
+        <h2 class="values-page-title">Values</h2>
+        <span id="values-count" class="muted"></span>
+      </div>
+      <div id="values-list" class="values-list"></div>
+    </div>
+
     <script type="module" src="/app.js"></script>
   </body>
-  </html>
+</html>

@@ -573,3 +573,125 @@ main { margin-top: 1rem; }
   opacity: 0;
 }
 .depth-layer[data-depth="3"].visible { opacity: 0.15; }
+
+/* ── Hamburger menu ─────────────────────────────── */
+
+.hamburger-menu {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 4.5rem);
+  left: max(1rem, env(safe-area-inset-left));
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow: var(--shadow);
+  border-radius: 14px;
+  padding: 0.4rem;
+  z-index: 40;
+  min-width: 9rem;
+}
+
+.hamburger-menu.hidden { display: none; }
+
+.menu-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.65rem 0.9rem;
+  text-align: left;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.menu-item:hover, .menu-item:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Values page overlay ────────────────────────── */
+
+.values-page {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  background:
+    radial-gradient(ellipse 70% 55% at 10% 35%, rgba(52, 211, 153, 0.22), transparent),
+    radial-gradient(ellipse 55% 65% at 88% 12%, rgba(96, 165, 250, 0.18), transparent),
+    #080c18;
+}
+
+.values-page.hidden { display: none; }
+
+.values-page-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 18px;
+  margin-bottom: 1rem;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow: var(--shadow), var(--glass-hi);
+}
+
+.values-page-title {
+  flex: 1;
+  font-size: 1.1rem;
+}
+
+.values-page .values-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.values-page .value-item {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  border-radius: 16px;
+  padding: 1rem;
+  border-left: 3px solid var(--goal);
+}
+
+/* ── Gesture feedback on cards ──────────────────── */
+
+.card {
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  will-change: transform;
+}
+
+.card--dragging {
+  opacity: 0.92;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), var(--glass-hi);
+  z-index: 10;
+}
+
+.card-title {
+  cursor: text;
+}
+
+/* ── Inline rename ──────────────────────────────── */
+
+.rename-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--glass-border);
+  border-radius: 0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.04rem;
+  outline: none;
+  padding: 0;
+  width: 100%;
+}

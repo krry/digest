@@ -19,6 +19,7 @@ const state = {
   sortMode: "manual",
   viewMode: "children",
   composerMode: "child",
+  route: "main",
   status: "booting",
   detail: "Loading cached state.",
 };
@@ -28,6 +29,11 @@ let retryTimer = null;
 
 const els = {
   syncDot: document.querySelector("#sync-dot"),
+  hamburger: document.querySelector("#hamburger"),
+  hamburgerMenu: document.querySelector("#hamburger-menu"),
+  valuesPage: document.querySelector("#values-page"),
+  valuesBack: document.querySelector("#values-back"),
+  navValues: document.querySelector("#nav-values"),
   breadcrumbs: document.querySelector("#breadcrumbs"),
   focusCard: document.querySelector("#focus-card"),
   list: document.querySelector("#list"),
@@ -183,25 +189,29 @@ function renderList() {
   els.emptyState.classList.toggle("hidden", nodes.length > 0);
   els.list.innerHTML = nodes
     .map(
-      (node) => `
+      (node) => {
+        const subtitleParts = [];
+        if (node.status !== "active") subtitleParts.push(escapeHtml(node.status));
+        if (node.dueDate) subtitleParts.push(escapeHtml(node.dueDate));
+        if (node.importance != null) subtitleParts.push(`imp:${node.importance}`);
+        const subtitle = subtitleParts.length
+          ? `<div class="card-subtitle">${subtitleParts.join(" · ")}</div>` : "";
+        const tags = node.tags && node.tags.length
+          ? `<div class="card-tags">${node.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>` : "";
+        return `
         <article class="card ${escapeHtml(node.status)}" data-id="${node.id}" data-type="${node.type}">
           <div class="card-header">
-            <div>
-              <div class="card-title">${escapeHtml(node.title)}${node.status === "completed" ? " ✓" : ""}</div>
-              ${(() => { const parts = [escapeHtml(node.status)]; if (node.dueDate) parts.push(escapeHtml(node.dueDate)); if (node.importance != null) parts.push(`imp:${node.importance}`); return parts.length ? `<div class="card-subtitle">${parts.join(" · ")}</div>` : ""; })()}
-              ${node.tags && node.tags.length ? `<div class="card-tags">${node.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+            <div class="card-body-text">
+              <div class="card-title" data-rename-id="${node.id}">${escapeHtml(node.title)}${node.status === "completed" ? " ✓" : ""}</div>
+              ${subtitle}
+              ${tags}
             </div>
-            <button class="icon-button" data-open="${node.id}">Open</button>
+            <button class="icon-button" data-edit-details="${node.id}" style="position:relative;z-index:2">&#x22EF;</button>
           </div>
           <div class="card-actions">
-            <button class="action-button" data-rename="${node.id}">Rename</button>
-            <button class="action-button" data-complete="${node.id}">Done</button>
             <button class="action-button" data-archive="${node.id}">Archive</button>
-            <button class="action-button" data-move-up="${node.id}">&#x2191;</button>
-            <button class="action-button" data-move-down="${node.id}">&#x2193;</button>
             <button class="action-button" data-indent="${node.id}">&#x2192;</button>
             <button class="action-button" data-unindent="${node.id}">&#x2190;</button>
-            <button class="action-button" data-edit-details="${node.id}">&#x22EF;</button>
           </div>
           <div class="card-detail-panel hidden" id="detail-${node.id}">
             <div class="detail-row">
@@ -220,81 +230,45 @@ function renderList() {
               <input class="detail-input" type="text" placeholder="comma-separated" data-tags="${node.id}" value="${escapeHtml((node.tags || []).join(", "))}">
             </div>
           </div>
-        </article>
-      `
+        </article>`;
+      }
     )
     .join("");
 
-  els.list.querySelectorAll("[data-open]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const id = button.getAttribute("data-open");
-      if (!id) return;
-      const path = pathNodes().map((node) => node.id);
-      state.focusStack = [...path, id];
-      persistAndRender();
-    });
-  });
+  attachCardGestures(els.list);
 
-  els.list.querySelectorAll("[data-rename]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const id = button.getAttribute("data-rename");
-      const node = nodeById(id);
-      if (!node) return;
-      const title = window.prompt("Rename node", node.title)?.trim();
-      if (!title) return;
-      await queueMutation({ id: generateId(), type: "rename-node", nodeId: id, title });
-    });
-  });
-
-  els.list.querySelectorAll("[data-complete]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const id = button.getAttribute("data-complete");
-      if (!id) return;
-      await queueMutation({ id: generateId(), type: "complete-node", nodeId: id });
-    });
-  });
-
-  els.list.querySelectorAll("[data-archive]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const id = button.getAttribute("data-archive");
-      if (!id) return;
-      await queueMutation({ id: generateId(), type: "archive-node", nodeId: id });
-    });
-  });
-
-  els.list.querySelectorAll("[data-move-up]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const id = btn.getAttribute("data-move-up");
-      if (id) await queueMutation({ id: generateId(), type: "move-node-up", nodeId: id });
-    });
-  });
-  els.list.querySelectorAll("[data-move-down]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const id = btn.getAttribute("data-move-down");
-      if (id) await queueMutation({ id: generateId(), type: "move-node-down", nodeId: id });
+  els.list.querySelectorAll("[data-archive]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute("data-archive");
+      if (id) await queueMutation({ id: generateId(), type: "archive-node", nodeId: id });
     });
   });
   els.list.querySelectorAll("[data-indent]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
       const id = btn.getAttribute("data-indent");
       if (id) await queueMutation({ id: generateId(), type: "indent-node", nodeId: id });
     });
   });
   els.list.querySelectorAll("[data-unindent]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
       const id = btn.getAttribute("data-unindent");
       if (id) await queueMutation({ id: generateId(), type: "unindent-node", nodeId: id });
     });
   });
   els.list.querySelectorAll("[data-edit-details]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
       const id = btn.getAttribute("data-edit-details");
       const panel = document.getElementById(`detail-${id}`);
       if (panel) panel.classList.toggle("hidden");
     });
   });
   els.list.querySelectorAll("[data-imp]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
       const id = btn.getAttribute("data-imp");
       const val = btn.getAttribute("data-val");
       const importance = val === "" ? null : parseInt(val, 10);
@@ -315,6 +289,140 @@ function renderList() {
       if (id) await queueMutation({ id: generateId(), type: "set-tags", nodeId: id, tags });
     });
   });
+}
+
+function attachCardGestures(listEl) {
+  const SWIPE_THRESHOLD = 60;
+  const LONG_PRESS_MS = 420;
+  let g = null;
+
+  listEl.addEventListener("pointerdown", (e) => {
+    const card = e.target.closest(".card");
+    if (!card || e.target.closest("button") || e.target.closest("input")) return;
+    g = {
+      id: card.dataset.id,
+      el: card,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      mode: null,
+      dy: 0,
+      timer: setTimeout(() => {
+        if (g && !g.moved) {
+          g.mode = "drag";
+          card.classList.add("card--dragging");
+          navigator.vibrate?.(12);
+        }
+      }, LONG_PRESS_MS),
+    };
+    card.setPointerCapture(e.pointerId);
+  });
+
+  listEl.addEventListener("pointermove", (e) => {
+    if (!g) return;
+    const dx = e.clientX - g.startX;
+    const dy = e.clientY - g.startY;
+    if (!g.moved && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+      g.moved = true;
+      clearTimeout(g.timer);
+      if (g.mode !== "drag") {
+        g.mode = Math.abs(dx) > Math.abs(dy) ? "swipe" : "scroll";
+      }
+    }
+    if (g.mode === "swipe") {
+      e.preventDefault();
+      g.el.style.transform = `translateX(${dx}px)`;
+      const t = Math.min(Math.abs(dx) / SWIPE_THRESHOLD, 1);
+      g.el.style.background = dx > 0
+        ? `linear-gradient(135deg, rgba(52,211,153,${(t * 0.35).toFixed(2)}), rgba(255,255,255,0.07))`
+        : `linear-gradient(135deg, rgba(251,191,36,${(t * 0.35).toFixed(2)}), rgba(255,255,255,0.07))`;
+    }
+    if (g.mode === "drag") {
+      e.preventDefault();
+      g.dy = dy;
+      g.el.style.transform = `translateY(${dy}px)`;
+    }
+  });
+
+  listEl.addEventListener("pointerup", async (e) => {
+    if (!g) return;
+    const { id, el, startX, startY, mode, moved, dy } = g;
+    clearTimeout(g.timer);
+    const dx = e.clientX - startX;
+    el.style.transform = "";
+    el.style.background = "";
+    el.classList.remove("card--dragging");
+
+    if (mode === "swipe" && Math.abs(dx) >= SWIPE_THRESHOLD) {
+      if (dx > 0) {
+        await queueMutation({ id: generateId(), type: "complete-node", nodeId: id });
+      } else {
+        const node = nodeById(id);
+        const next = node ? ((node.importance ?? 0) % 5) + 1 : 1;
+        await queueMutation({ id: generateId(), type: "set-importance", nodeId: id, importance: next });
+      }
+    } else if (mode === "drag" && Math.abs(dy) > 10) {
+      const cardH = el.offsetHeight + 12;
+      const steps = Math.round(dy / cardH);
+      if (steps !== 0) {
+        const action = steps > 0 ? "move-node-down" : "move-node-up";
+        for (let i = 0; i < Math.abs(steps); i++) {
+          await queueMutation({ id: generateId(), type: action, nodeId: id });
+        }
+      }
+    } else if (!moved) {
+      const titleEl = e.target.closest("[data-rename-id]");
+      if (titleEl) {
+        startRename(id, titleEl);
+      } else if (!e.target.closest("button") && !e.target.closest("input") && !e.target.closest(".card-detail-panel")) {
+        const node = nodeById(id);
+        if (node) {
+          state.focusStack = [...pathNodes().map((n) => n.id), id];
+          await persistAndRender();
+        }
+      }
+    }
+    g = null;
+  });
+
+  listEl.addEventListener("pointercancel", () => {
+    if (!g) return;
+    clearTimeout(g.timer);
+    g.el.style.transform = "";
+    g.el.style.background = "";
+    g.el.classList.remove("card--dragging");
+    g = null;
+  });
+}
+
+function startRename(id, titleEl) {
+  if (titleEl.querySelector("input")) return;
+  const node = nodeById(id);
+  if (!node) return;
+  const orig = node.title;
+  const input = document.createElement("input");
+  input.className = "rename-input";
+  input.value = orig;
+  titleEl.textContent = "";
+  titleEl.appendChild(input);
+  input.focus();
+  input.select();
+  let committed = false;
+  async function commit() {
+    if (committed) return;
+    committed = true;
+    const title = input.value.trim();
+    if (title && title !== orig) {
+      await queueMutation({ id: generateId(), type: "rename-node", nodeId: id, title });
+    } else {
+      render();
+    }
+  }
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    if (e.key === "Escape") { committed = true; render(); }
+  });
+  input.addEventListener("blur", commit);
 }
 
 function renderValues() {
@@ -412,11 +520,16 @@ function renderDepthBackground() {
 
 function render() {
   renderStatus();
+  const onValues = state.route === "values";
+  els.valuesPage.classList.toggle("hidden", !onValues);
+  if (onValues) {
+    renderValues();
+    return;
+  }
   renderDepthBackground();
   renderBreadcrumbs();
   renderFocusCard();
   renderList();
-  renderValues();
   renderToggles();
   composerPlaceholder();
 }
@@ -691,6 +804,30 @@ els.composer.addEventListener("submit", async (event) => {
 });
 
 els.syncButton.addEventListener("click", syncIfPossible);
+
+els.hamburger.addEventListener("click", (e) => {
+  e.stopPropagation();
+  els.hamburgerMenu.classList.toggle("hidden");
+});
+
+document.addEventListener("pointerdown", (e) => {
+  if (!els.hamburgerMenu.classList.contains("hidden") &&
+      !els.hamburgerMenu.contains(e.target) &&
+      e.target !== els.hamburger) {
+    els.hamburgerMenu.classList.add("hidden");
+  }
+});
+
+els.navValues.addEventListener("click", () => {
+  els.hamburgerMenu.classList.add("hidden");
+  state.route = "values";
+  render();
+});
+
+els.valuesBack.addEventListener("click", () => {
+  state.route = "main";
+  render();
+});
 els.childrenViewButton.addEventListener("click", async () => {
   state.viewMode = "children";
   await persistAndRender();
