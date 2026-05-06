@@ -1287,15 +1287,17 @@ class GistBrowser(App):
             self._set_status("All-level view is only for columns mode.")
             return
         gid = self._current_gist_id()
-        current = self._column_scope_for_depth(self.active_depth)
-        self.column_scope[self.active_depth] = "all" if current == "branch" else "branch"
+        depth = self.active_depth  # snapshot — _sync_selection_to_gid mutates active_depth
+        current = self._column_scope_for_depth(depth)
+        new_scope = "all" if current == "branch" else "branch"
+        self.column_scope[depth] = new_scope
         if gid:
-            if self.column_scope[self.active_depth] == "all":
-                self.cursor_memory[self._all_scope_key(self._column_type_for_depth(self.active_depth))] = gid
+            if new_scope == "all":
+                self.cursor_memory[self._all_scope_key(self._column_type_for_depth(depth))] = gid
             else:
                 self._sync_selection_to_gid(gid)
         self._refresh_view()
-        label = "all-level" if self.column_scope[self.active_depth] == "all" else "branch"
+        label = "all-level" if new_scope == "all" else "branch"
         self._set_status(f"Switched current column to {label} scope.")
 
     def action_cycle_sort(self):
