@@ -73,6 +73,20 @@ function parseNaturalDate(rawTitle) {
   return { title: cleaned, dueDate };
 }
 
+function relativeDueLabel(dueDateStr) {
+  if (!dueDateStr) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDateStr.length === 10 ? dueDateStr + "T00:00:00" : dueDateStr);
+  due.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((due - today) / 86400000);
+  if (diffDays < 0) return { text: "overdue", overdue: true };
+  if (diffDays === 0) return { text: "today", overdue: false };
+  if (diffDays === 1) return { text: "tomorrow", overdue: false };
+  if (diffDays <= 7) return { text: `in ${diffDays} days`, overdue: false };
+  return { text: due.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), overdue: false };
+}
+
 function childType(parentType) {
   return {
     goal: "idea",

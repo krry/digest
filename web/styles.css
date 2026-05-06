@@ -242,6 +242,21 @@ main { margin-top: 1rem; }
   font-size: 0.82rem;
 }
 
+.due-label {
+  font-size: 0.72rem;
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 0.1em 0.45em;
+  border-radius: var(--radius-xs);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.due-label--overdue {
+  color: var(--carnelian);
+  background: rgba(205, 74, 74, 0.12);
+}
+
 .card-actions {
   margin-top: 0.85rem;
   display: flex;
