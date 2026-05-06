@@ -20,7 +20,7 @@ const state = {
   sortMode: "manual",
   viewMode: "children",
   showCompleted: false,
-  route: "main",
+  route: "next",
   status: "booting",
   detail: "Loading cached state.",
 };
@@ -42,6 +42,8 @@ const els = {
   composerInput: document.querySelector("#composer-input"),
   childrenViewButton: document.querySelector("#children-view-button"),
   allViewButton: document.querySelector("#all-view-button"),
+  nextRouteButton: document.querySelector("#next-route-button"),
+  allRouteButton: document.querySelector("#all-route-button"),
   showCompletedBtn: document.querySelector("#show-completed-btn"),
   sortSelect: document.querySelector("#sort-select"),
 };
@@ -608,6 +610,8 @@ function renderToggles() {
   els.childrenViewButton.classList.toggle("active", state.viewMode === "children");
   els.allViewButton.classList.toggle("active", state.viewMode === "all");
   els.showCompletedBtn.classList.toggle("active", state.showCompleted);
+  els.nextRouteButton.classList.toggle("active", state.route === "next");
+  els.allRouteButton.classList.toggle("active", state.route === "all");
   els.sortSelect.value = state.sortMode;
 }
 
@@ -640,6 +644,7 @@ function snapshotState() {
     sortMode: state.sortMode,
     viewMode: state.viewMode,
     showCompleted: state.showCompleted,
+    route: state.route === "values" ? "all" : state.route,
   };
 }
 
@@ -961,7 +966,7 @@ els.navValues.addEventListener("click", () => {
 });
 
 els.valuesBack.addEventListener("click", () => {
-  state.route = "main";
+  state.route = "all";
   render();
 });
 els.childrenViewButton.addEventListener("click", async () => {
@@ -978,6 +983,14 @@ els.sortSelect.addEventListener("change", async () => {
 });
 els.showCompletedBtn.addEventListener("click", async () => {
   state.showCompleted = !state.showCompleted;
+  await persistAndRender();
+});
+els.nextRouteButton.addEventListener("click", async () => {
+  state.route = "next";
+  await persistAndRender();
+});
+els.allRouteButton.addEventListener("click", async () => {
+  state.route = "all";
   await persistAndRender();
 });
 document.addEventListener("keydown", (e) => {
