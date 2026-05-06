@@ -127,9 +127,11 @@ h2, h3, p { margin: 0; }
   gap: 0.35rem;
   overflow-x: auto;
   scroll-behavior: smooth;
-  padding: max(0.75rem, env(safe-area-inset-top)) 0 0.5rem;
+  /* break out of #app's side padding */
+  margin-left: -1rem;
+  margin-right: -1rem;
+  padding: max(0.75rem, env(safe-area-inset-top)) 1rem 0.5rem;
   scrollbar-width: none;
-  /* subtle blur so content scrolling under it doesn't clash */
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
