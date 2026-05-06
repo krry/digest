@@ -186,7 +186,41 @@ function renderFocusCard() {
   const typeRgb = { goal: "52,211,153", idea: "96,165,250", step: "192,132,252", task: "248,113,113", free: "148,163,184" };
   const rgb = typeRgb[node.type] || typeRgb.free;
   els.focusCard.style.background = `linear-gradient(135deg, rgba(${rgb}, 0.30) 0%, rgba(255,255,255,0.07) 65%)`;
-  els.focusCard.innerHTML = `<h2 class="focus-title">${escapeHtml(node.title)}</h2>`;
+  els.focusCard.innerHTML = `<h2 class="focus-title" data-rename-focus="${node.id}">${escapeHtml(node.title)}</h2>`;
+  els.focusCard.querySelector(".focus-title").addEventListener("click", () => {
+    const titleEl = els.focusCard.querySelector(".focus-title");
+    startRenameFocus(node.id, titleEl);
+  });
+}
+
+function startRenameFocus(id, titleEl) {
+  if (titleEl.querySelector("input")) return;
+  const node = nodeById(id);
+  if (!node) return;
+  const orig = node.title;
+  const input = document.createElement("input");
+  input.className = "rename-input";
+  input.value = orig;
+  titleEl.textContent = "";
+  titleEl.appendChild(input);
+  input.focus();
+  input.select();
+  let committed = false;
+  async function commit() {
+    if (committed) return;
+    committed = true;
+    const title = input.value.trim();
+    if (title && title !== orig) {
+      await queueMutation({ id: generateId(), type: "rename-node", nodeId: id, title });
+    } else {
+      renderFocusCard();
+    }
+  }
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    if (e.key === "Escape") { committed = true; renderFocusCard(); }
+  });
+  input.addEventListener("blur", commit);
 }
 
 function renderList() {
@@ -427,10 +461,7 @@ function attachCardGestures(listEl) {
     } else if (mode === "drag") {
       el.style.transform = "";
     } else if (!moved) {
-      const titleEl = e.target.closest("[data-rename-id]");
-      if (titleEl) {
-        startRename(id, titleEl);
-      } else if (!e.target.closest("button") && !e.target.closest("input") && !e.target.closest(".card-detail-panel")) {
+      if (!e.target.closest("button") && !e.target.closest("input") && !e.target.closest(".card-detail-panel")) {
         const node = nodeById(id);
         if (node) {
           state.focusStack = [...pathNodes().map((n) => n.id), id];

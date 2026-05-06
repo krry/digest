@@ -249,7 +249,7 @@ main { margin-top: 1rem; }
   font-size: 0.85rem;
 }
 
-.focus-title { font-size: 1.2rem; line-height: 1.2; }
+.focus-title { font-size: 1.2rem; line-height: 1.2; cursor: text; }
 
 /* ── Node list + cards ──────────────────────────── */
 
