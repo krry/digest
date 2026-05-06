@@ -29,8 +29,6 @@ let retryTimer = null;
 
 const els = {
   syncDot: document.querySelector("#sync-dot"),
-  hamburger: document.querySelector("#hamburger"),
-  hamburgerMenu: document.querySelector("#hamburger-menu"),
   valuesPage: document.querySelector("#values-page"),
   valuesBack: document.querySelector("#values-back"),
   navValues: document.querySelector("#nav-values"),
@@ -893,21 +891,7 @@ els.composer.addEventListener("submit", async (event) => {
 
 els.syncButton.addEventListener("click", syncIfPossible);
 
-els.hamburger.addEventListener("click", (e) => {
-  e.stopPropagation();
-  els.hamburgerMenu.classList.toggle("hidden");
-});
-
-document.addEventListener("pointerdown", (e) => {
-  if (!els.hamburgerMenu.classList.contains("hidden") &&
-      !els.hamburgerMenu.contains(e.target) &&
-      e.target !== els.hamburger) {
-    els.hamburgerMenu.classList.add("hidden");
-  }
-});
-
 els.navValues.addEventListener("click", () => {
-  els.hamburgerMenu.classList.add("hidden");
   state.route = "values";
   render();
 });

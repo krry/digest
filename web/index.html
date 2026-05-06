@@ -7,31 +7,24 @@
     <meta name="theme-color" content="#080c18">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="stylesheet" href="/styles.css">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="apple-touch-icon" href="/favicon.png">
+    <link rel="shortcut icon" href="/favicon.png">
   </head>
   <body>
     <div id="depth-bg"></div>
     <div id="app">
-      <header class="titlebar">
-        <button id="hamburger" class="icon-button" aria-label="Menu">&#x2630;</button>
-        <span class="titlebar-title">Digest</span>
-        <div class="titlebar-right">
-          <button id="sync-button" class="sync-button" aria-label="Sync">&#x21BB;</button>
-          <span id="sync-dot" class="sync-dot"></span>
-        </div>
-      </header>
 
-      <div id="hamburger-menu" class="hamburger-menu hidden">
-        <button id="nav-values" class="menu-item">Values</button>
-      </div>
-
-      <nav id="breadcrumbs" class="breadcrumbs"></nav>
+      <nav id="breadcrumbs" class="breadcrumbs">
+        <button id="sync-button" class="sync-button" aria-label="Sync">&#x21BB;</button>
+        <span id="sync-dot" class="sync-dot"></span>
+      </nav>
 
       <main>
         <section id="focus-card" class="focus-card hidden"></section>
         <section id="list" class="list"></section>
         <section id="empty-state" class="empty-state hidden">
           <p>Nothing here yet.</p>
-          <p class="muted">Add something small and let the structure emerge.</p>
         </section>
       </main>
 
@@ -48,6 +41,7 @@
           <button id="children-view-button" type="button" class="mode-btn active">Children</button>
           <button id="all-view-button" type="button" class="mode-btn">All</button>
         </div>
+        <button id="nav-values" class="footer-values-btn">Values</button>
       </div>
 
       <form id="composer" class="composer composer--collapsed">
