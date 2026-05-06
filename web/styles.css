@@ -21,21 +21,22 @@
   --line:  rgba(255, 255, 255, 0.12);
 
   /* Layout */
-  --radius: 20px;
+  --radius: 0.25rem;
+  --radius-sm: 0.125rem;
 }
 
 * { box-sizing: border-box; }
 
 html, body {
   margin: 0;
-  min-height: 100%;
+  min-height: 100vh;
   font-family: ui-rounded, "SF Pro Rounded", "Avenir Next", "Trebuchet MS", sans-serif;
   background:
-    radial-gradient(ellipse 70% 55% at 10% 35%,  rgba(52,  211, 153, 0.30), transparent),
-    radial-gradient(ellipse 55% 65% at 88% 12%,  rgba(96,  165, 250, 0.26), transparent),
-    radial-gradient(ellipse 50% 60% at 55% 88%,  rgba(192, 132, 252, 0.22), transparent),
-    radial-gradient(ellipse 40% 45% at 75% 55%,  rgba(248, 113, 113, 0.14), transparent),
-    #080c18;
+  radial-gradient(ellipse 70% 55% at 10% 35%,  rgba(212, 175, 55, 0.30), transparent),   /* gold */
+  radial-gradient(ellipse 55% 65% at 88% 12%,  rgba(25,  74, 140, 0.28), transparent),   /* deep blue */
+  radial-gradient(ellipse 50% 60% at 55% 88%,  rgba(0,  120, 140, 0.24), transparent),   /* teal inlay */
+  radial-gradient(ellipse 40% 45% at 75% 55%,  rgba(180,  50,  35, 0.18), transparent),   /* red stone */
+  #1a1408; /* warm dark base */
   color: var(--ink);
 }
 
@@ -108,7 +109,7 @@ body {
 /* ── Title bar ──────────────────────────────────── */
 
 .titlebar {
-  border-radius: 18px;
+  border-radius: var(--radius);
   padding: 0.6rem 0.75rem;
   display: flex;
   align-items: center;
@@ -125,6 +126,7 @@ body {
 
 .titlebar-right {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 0.4rem;
 }
@@ -134,8 +136,10 @@ body {
   border: none;
   color: var(--ink);
   cursor: pointer;
-  font-size: 1.1rem;
+  font-size: 1.5rem;
+  font-weight: 300;
   line-height: 1;
+  margin: -0.5rem 0;
   padding: 0.3rem;
   transition: transform 0.6s ease;
 }
@@ -169,10 +173,14 @@ h2, h3, p { margin: 0; }
 
 .breadcrumbs {
   display: flex;
-  gap: 0.45rem;
+  align-items: center;
+  gap: 0.3rem;
   overflow-x: auto;
+  scroll-behavior: smooth;
   padding: 0.9rem 0 0.25rem;
+  scrollbar-width: none;
 }
+.breadcrumbs::-webkit-scrollbar { display: none; }
 
 .crumb {
   border: 0;
@@ -185,7 +193,13 @@ h2, h3, p { margin: 0; }
   font: inherit;
 }
 
-.crumb.active { color: var(--ink); font-weight: 700; }
+.crumb-sep { color: var(--muted); opacity: 0.45; font-size: 0.85rem; }
+
+.crumb--current {
+  color: var(--ink);
+  font-weight: 600;
+  cursor: default;
+}
 
 /* ── Sort strip (bare, below list) ─────────────── */
 
@@ -205,7 +219,7 @@ h2, h3, p { margin: 0; }
 select, input { font: inherit; }
 
 select, input {
-  border-radius: 12px;
+  border-radius: 1rem;
   border: 1px solid var(--glass-border);
   background: rgba(255, 255, 255, 0.08);
   color: var(--ink);
@@ -219,7 +233,7 @@ select option { background: #1a1f36; color: var(--ink); }
 main { margin-top: 1rem; }
 
 .focus-card {
-  border-radius: 24px;
+  border-radius: var(--radius);
   padding: 1rem;
   margin-bottom: 0.9rem;
 }
@@ -242,7 +256,7 @@ main { margin-top: 1rem; }
 .list { display: grid; gap: 0.8rem; }
 
 .card {
-  border-radius: 22px;
+  border-radius: var(--radius);
   padding: 0.95rem;
 }
 
@@ -286,15 +300,15 @@ main { margin-top: 1rem; }
 .action-button,
 .ghost-button,
 .icon-button {
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 0.55rem 0.8rem;
-  background: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--ink);
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .primary-button {
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   padding: 0.55rem 0.8rem;
   background: rgba(255, 255, 255, 0.92);
   color: #080c18;
@@ -307,16 +321,25 @@ main { margin-top: 1rem; }
 /* ── Empty state ────────────────────────────────── */
 
 .empty-state {
-  border-radius: 22px;
+  border-radius: var(--radius);
   padding: 1rem;
   text-align: center;
+}
+
+.empty-add-button {
+  font-size: 1.25rem;
+  margin: 0.5em 0;
+  padding: 0.25em 0.5em;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1)
 }
 
 /* ── Values panel ───────────────────────────────── */
 
 .values-panel {
   margin-top: 1rem;
-  border-radius: 24px;
+  border-radius: var(--radius);
   padding: 1rem;
 }
 
@@ -356,7 +379,7 @@ main { margin-top: 1rem; }
   background: var(--glass-strong);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow), var(--glass-hi);
-  border-radius: 24px;
+  border-radius: var(--radius);
   padding: 0.85rem;
 }
 
@@ -364,13 +387,13 @@ main { margin-top: 1rem; }
   width: 3.25rem;
   height: 3.25rem;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.15);
   color: #080c18;
   font-size: 1.65rem;
   line-height: 1;
   border: none;
   cursor: pointer;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -397,7 +420,7 @@ main { margin-top: 1rem; }
 
 .composer-mode-toggle {
   display: flex;
-  border-radius: 10px;
+  border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid var(--glass-border);
   background: rgba(255, 255, 255, 0.06);
@@ -581,7 +604,7 @@ main { margin-top: 1rem; }
   backdrop-filter: blur(28px) saturate(160%);
   -webkit-backdrop-filter: blur(28px) saturate(160%);
   box-shadow: var(--shadow);
-  border-radius: 14px;
+  border-radius: var(--radius-sm);
   padding: 0.4rem;
   z-index: 40;
   min-width: 9rem;
@@ -599,7 +622,7 @@ main { margin-top: 1rem; }
   font-size: 0.9rem;
   padding: 0.65rem 0.9rem;
   text-align: left;
-  border-radius: 10px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -628,7 +651,7 @@ main { margin-top: 1rem; }
   align-items: center;
   gap: 0.75rem;
   padding: 0.75rem 1rem;
-  border-radius: 18px;
+  border-radius: var(--radius);
   margin-bottom: 1rem;
   background: var(--glass);
   border: 1px solid var(--glass-border);
@@ -652,7 +675,7 @@ main { margin-top: 1rem; }
   border: 1px solid var(--glass-border);
   backdrop-filter: blur(28px) saturate(160%);
   -webkit-backdrop-filter: blur(28px) saturate(160%);
-  border-radius: 16px;
+  border-radius: var(--radius);
   padding: 1rem;
   border-left: 3px solid var(--goal);
 }

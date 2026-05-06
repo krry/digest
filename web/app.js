@@ -145,12 +145,19 @@ function renderStatus() {
   else dot.classList.add("sync-dot--yellow");
 }
 
+const TYPE_PLURAL = { goal: "Goals", idea: "Ideas", step: "Steps", task: "Tasks", free: "Notes" };
+
 function renderBreadcrumbs() {
-  const crumbs = [`<button class="crumb ${currentFocusId() ? "" : "active"}" data-focus="">Goals</button>`];
-  for (const node of pathNodes()) {
-    crumbs.push(`<span class="muted">/</span>`);
-    crumbs.push(`<button class="crumb ${node.id === currentFocusId() ? "active" : ""}" data-focus="${node.id}">${node.title}</button>`);
+  const path = pathNodes();
+  const focus = path[path.length - 1];
+  const listLabel = TYPE_PLURAL[focus ? childType(focus.type) : "goal"];
+  const crumbs = [`<button class="crumb" data-focus="">Goals</button>`];
+  for (const node of path) {
+    crumbs.push(`<span class="crumb-sep">/</span>`);
+    crumbs.push(`<button class="crumb" data-focus="${node.id}">${node.title}</button>`);
   }
+  crumbs.push(`<span class="crumb-sep">/</span>`);
+  crumbs.push(`<span class="crumb crumb--current">${listLabel}</span>`);
   els.breadcrumbs.innerHTML = crumbs.join("");
   els.breadcrumbs.querySelectorAll("[data-focus]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -164,6 +171,7 @@ function renderBreadcrumbs() {
       persistAndRender();
     });
   });
+  els.breadcrumbs.scrollLeft = els.breadcrumbs.scrollWidth;
 }
 
 function renderFocusCard() {
@@ -234,8 +242,9 @@ function renderList() {
 
   // Ghost sibling card — appended after real cards
   const ghost = document.createElement("article");
+  const nodeType = els.list.querySelectorAll("[data-type]")[0].dataset.type
   ghost.className = "card card--ghost";
-  ghost.innerHTML = '<div class="card-title card--ghost-label">+ sibling</div>';
+  ghost.innerHTML = `<div class="card-title card--ghost-label">+ add ${nodeType}</div>`;
   ghost.addEventListener("click", () => {
     state.composerMode = "sibling";
     els.composerModeToggle.querySelectorAll(".mode-btn").forEach((b) => {
