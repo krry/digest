@@ -375,8 +375,35 @@ function snapshotState() {
   };
 }
 
+const TYPE_COLORS = { goal: "#34d399", idea: "#60a5fa", step: "#c084fc", task: "#f87171", free: "#94a3b8" };
+
+function renderDepthBackground() {
+  const bg = document.getElementById("depth-bg");
+  if (!bg) return;
+  const path = pathNodes();
+  const existing = bg.querySelectorAll(".depth-layer");
+  // reuse or create layers
+  path.forEach((node, i) => {
+    let el = existing[i];
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "depth-layer";
+      bg.appendChild(el);
+    }
+    el.dataset.depth = i;
+    el.style.background = TYPE_COLORS[node.type] || TYPE_COLORS.free;
+    requestAnimationFrame(() => el.classList.add("visible"));
+  });
+  // remove extra layers
+  for (let i = path.length; i < existing.length; i++) {
+    existing[i].classList.remove("visible");
+    existing[i].addEventListener("transitionend", (e) => e.target.remove(), { once: true });
+  }
+}
+
 function render() {
   renderStatus();
+  renderDepthBackground();
   renderBreadcrumbs();
   renderFocusCard();
   renderList();

@@ -506,3 +506,55 @@ main { margin-top: 1rem; }
     flex-direction: column;
   }
 }
+
+/* ── Depth background layers ────────────────────── */
+
+#depth-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.depth-layer {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.7s ease, transform 0.7s ease;
+  filter: blur(90px);
+}
+
+.depth-layer.visible { opacity: 1; }
+
+/* Each depth index gets a distinct size, position, and blob shape */
+.depth-layer[data-depth="0"] {
+  width: 90vw; height: 75vw;
+  bottom: -25vw; left: -20vw;
+  border-radius: 60% 40% 70% 30% / 50% 60% 40% 50%;
+  opacity: 0;
+}
+.depth-layer[data-depth="0"].visible { opacity: 0.28; }
+
+.depth-layer[data-depth="1"] {
+  width: 65vw; height: 55vw;
+  top: 5vh; right: -18vw;
+  border-radius: 40% 60% 35% 65% / 60% 35% 65% 40%;
+  opacity: 0;
+}
+.depth-layer[data-depth="1"].visible { opacity: 0.22; }
+
+.depth-layer[data-depth="2"] {
+  width: 48vw; height: 42vw;
+  top: 35vh; left: 15vw;
+  border-radius: 55% 45% 45% 55% / 40% 55% 45% 60%;
+  opacity: 0;
+}
+.depth-layer[data-depth="2"].visible { opacity: 0.18; }
+
+.depth-layer[data-depth="3"] {
+  width: 35vw; height: 30vw;
+  bottom: 22vh; right: 10vw;
+  border-radius: 50% 50% 60% 40% / 55% 45% 55% 45%;
+  opacity: 0;
+}
+.depth-layer[data-depth="3"].visible { opacity: 0.15; }
