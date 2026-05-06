@@ -191,7 +191,12 @@ function renderFocusCard() {
 
 function renderList() {
   const nodes = sortedNodes(visibleNodes());
-  els.emptyState.classList.toggle("hidden", nodes.length > 0);
+  // Ghost replaces empty state — always hide the static panel
+  els.emptyState.classList.add("hidden");
+
+  const focusNode = nodeById(currentFocusId());
+  const listType = childType(focusNode?.type);
+
   els.list.innerHTML = nodes
     .map(
       (node) => {
@@ -244,17 +249,17 @@ function renderList() {
 
   attachCardGestures(els.list);
 
-  // Ghost sibling card — appended after real cards
+  // Ghost card — always present, uses the correct child type for this level
   const ghostWrap = document.createElement("div");
   ghostWrap.className = "card-wrap";
   const ghost = document.createElement("article");
-  const nodeType = els.list.querySelectorAll("[data-type]")[0]?.dataset.type ?? "node";
   ghost.className = "card card--ghost";
-  ghost.innerHTML = `<div class="card-title card--ghost-label">+ add ${nodeType}</div>`;
+  ghost.innerHTML = `<div class="card-title card--ghost-label">+ add ${listType}</div>`;
+  // When list is empty, ghost acts as first child; otherwise it adds a sibling
   ghost.addEventListener("click", () => {
-    state.composerMode = "sibling";
+    state.composerMode = nodes.length === 0 ? "child" : "sibling";
     els.composerModeToggle.querySelectorAll(".mode-btn").forEach((b) => {
-      b.classList.toggle("active", b.dataset.mode === "sibling");
+      b.classList.toggle("active", b.dataset.mode === state.composerMode);
     });
     openComposer();
   });
