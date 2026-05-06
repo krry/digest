@@ -64,7 +64,7 @@ body {
   box-shadow: var(--shadow), var(--glass-hi);
 }
 
-/* ── Type colors + folded corner ────────────────── */
+/* ── Type color tokens ──────────────────────────── */
 
 [data-type="goal"] { --type-color: var(--goal); }
 [data-type="idea"] { --type-color: var(--idea); }
@@ -75,34 +75,6 @@ body {
 .card {
   position: relative;
   overflow: hidden;
-}
-
-/* Folded corner triangle */
-.card::before {
-  content: "";
-  position: absolute;
-  top: 0; right: 0;
-  width: 0; height: 0;
-  border-style: solid;
-  border-width: 0 22px 22px 0;
-  border-color: transparent var(--type-color, var(--free)) transparent transparent;
-  opacity: 0.85;
-  z-index: 1;
-}
-
-/* Soft type-color radial wash on card */
-.card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    ellipse 70% 60% at 95% 5%,
-    var(--type-color, transparent),
-    transparent 72%
-  );
-  opacity: 0.08;
-  pointer-events: none;
-  z-index: 0;
 }
 
 /* ── Sync button + dot ──────────────────────────── */
@@ -147,33 +119,45 @@ h2, h3, p { margin: 0; }
 /* ── Breadcrumbs ────────────────────────────────── */
 
 .breadcrumbs {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.35rem;
   overflow-x: auto;
   scroll-behavior: smooth;
-  padding: 0.75rem 0 0.25rem;
+  padding: max(0.75rem, env(safe-area-inset-top)) 0 0.5rem;
   scrollbar-width: none;
+  /* subtle blur so content scrolling under it doesn't clash */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .breadcrumbs::-webkit-scrollbar { display: none; }
 
 .crumb {
   border: 0;
-  background: none;
-  color: var(--muted);
-  padding: 0.2rem 0.1rem;
-  font-size: 0.95rem;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
   white-space: nowrap;
   cursor: pointer;
-  font: inherit;
+  border-radius: 2rem;
+  padding: 0.28rem 0.75rem;
+  /* color and background set via --crumb-color inline */
+  background: color-mix(in srgb, var(--crumb-color, #fff) 18%, transparent);
+  color: color-mix(in srgb, var(--crumb-color, #fff) 55%, transparent);
+  transition: background 0.2s, color 0.2s;
 }
 
-.crumb-sep { color: var(--muted); opacity: 0.45; font-size: 0.85rem; }
+.crumb-sep { display: none; }
 
 .crumb--current {
-  color: var(--ink);
-  font-weight: 600;
+  background: color-mix(in srgb, var(--crumb-color, #fff) 82%, transparent);
+  color: #fff;
   cursor: default;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--crumb-color, #fff) 40%, transparent);
 }
 
 /* ── Sort strip (bare, below list) ─────────────── */
@@ -347,14 +331,20 @@ main { margin-top: 1rem; }
 
 .composer {
   position: fixed;
-  right: max(1.25rem, env(safe-area-inset-right));
-  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: max(1.5rem, env(safe-area-inset-bottom));
   z-index: 50;
   background: none;
   border: none;
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+.composer--open {
+  left: max(1rem, env(safe-area-inset-left));
+  transform: none;
 }
 
 .composer--open {
@@ -371,20 +361,25 @@ main { margin-top: 1rem; }
 }
 
 .composer-fab {
-  width: 3.25rem;
-  height: 3.25rem;
+  width: 3.5rem;
+  height: 3.5rem;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
-  color: #080c18;
-  font-size: 1.65rem;
+  background: rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.75rem;
   line-height: 1;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   cursor: pointer;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.28),
+    0 2px 8px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-left: auto;
 }
 
 .composer--open .composer-fab { display: none; }

@@ -145,17 +145,26 @@ function renderStatus() {
 
 const TYPE_PLURAL = { goal: "Goals", idea: "Ideas", step: "Steps", task: "Tasks", free: "Notes" };
 
+const TYPE_COLOR_HEX = { goal: "#34d399", idea: "#60a5fa", step: "#c084fc", task: "#f87171", free: "#94a3b8" };
+
+function crumbColor(type) {
+  return TYPE_COLOR_HEX[type] || "rgba(255,255,255,0.6)";
+}
+
 function renderBreadcrumbs() {
   const path = pathNodes();
   const focus = path[path.length - 1];
-  const listLabel = TYPE_PLURAL[focus ? childType(focus.type) : "goal"];
-  const crumbs = [`<button class="crumb" data-focus="">GIST</button>`];
+  const listType = focus ? childType(focus.type) : "goal";
+  const listLabel = TYPE_PLURAL[listType];
+  const listColor = crumbColor(listType);
+
+  const crumbs = [`<button class="crumb" data-focus="" style="--crumb-color: rgba(255,255,255,0.7)">GIST</button>`];
   for (const node of path) {
-    crumbs.push(`<span class="crumb-sep">/</span>`);
-    crumbs.push(`<button class="crumb" data-focus="${node.id}">${node.title}</button>`);
+    const col = crumbColor(node.type);
+    crumbs.push(`<button class="crumb" data-focus="${node.id}" style="--crumb-color:${col}">${escapeHtml(node.title)}</button>`);
   }
-  crumbs.push(`<span class="crumb-sep">/</span>`);
-  crumbs.push(`<span class="crumb crumb--current">${listLabel}</span>`);
+  crumbs.push(`<span class="crumb crumb--current" style="--crumb-color:${listColor}">${listLabel}</span>`);
+
   els.breadcrumbs.innerHTML = crumbs.join("");
   els.breadcrumbs.querySelectorAll("[data-focus]").forEach((button) => {
     button.addEventListener("click", () => {
