@@ -188,7 +188,7 @@ function renderList() {
           <div class="card-header">
             <div>
               <div class="card-title">${escapeHtml(node.title)}${node.status === "completed" ? " ✓" : ""}</div>
-              <div class="card-subtitle">${escapeHtml(node.status)} · ${escapeHtml(node.dueDate || "no due date")} · imp:${node.importance ?? "—"} · ${childrenOf(node.id).length} children</div>
+              ${(() => { const parts = [escapeHtml(node.status)]; if (node.dueDate) parts.push(escapeHtml(node.dueDate)); if (node.importance != null) parts.push(`imp:${node.importance}`); return parts.length ? `<div class="card-subtitle">${parts.join(" · ")}</div>` : ""; })()}
               ${node.tags && node.tags.length ? `<div class="card-tags">${node.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
             </div>
             <button class="icon-button" data-open="${node.id}">Open</button>
