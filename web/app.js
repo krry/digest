@@ -245,8 +245,10 @@ function renderList() {
   attachCardGestures(els.list);
 
   // Ghost sibling card — appended after real cards
+  const ghostWrap = document.createElement("div");
+  ghostWrap.className = "card-wrap";
   const ghost = document.createElement("article");
-  const nodeType = els.list.querySelectorAll("[data-type]")[0].dataset.type
+  const nodeType = els.list.querySelectorAll("[data-type]")[0]?.dataset.type ?? "node";
   ghost.className = "card card--ghost";
   ghost.innerHTML = `<div class="card-title card--ghost-label">+ add ${nodeType}</div>`;
   ghost.addEventListener("click", () => {
@@ -256,7 +258,8 @@ function renderList() {
     });
     openComposer();
   });
-  els.list.appendChild(ghost);
+  ghostWrap.appendChild(ghost);
+  els.list.appendChild(ghostWrap);
 
   els.list.querySelectorAll("[data-edit-details]").forEach((btn) => {
     btn.addEventListener("click", (e) => {

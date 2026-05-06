@@ -1,4 +1,4 @@
-const CACHE = "digest-shell-v13";
+const CACHE = "digest-shell-v14";
 const SHELL = ["/", "/styles.css", "/app.js", "/db.js", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

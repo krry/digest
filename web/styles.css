@@ -363,6 +363,7 @@ main { margin-top: 1rem; }
   position: fixed;
   right: max(1.25rem, env(safe-area-inset-right));
   bottom: max(1.25rem, env(safe-area-inset-bottom));
+  z-index: 50;
   background: none;
   border: none;
   box-shadow: none;
@@ -686,7 +687,7 @@ main { margin-top: 1rem; }
 
 .card-wrap {
   position: relative;
-  border-radius: 18px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
