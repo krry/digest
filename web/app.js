@@ -38,7 +38,6 @@ const els = {
   valuesCount: document.querySelector("#values-count"),
   composer: document.querySelector("#composer"),
   composerInput: document.querySelector("#composer-input"),
-  composerFab: document.querySelector("#composer-fab"),
   childrenViewButton: document.querySelector("#children-view-button"),
   allViewButton: document.querySelector("#all-view-button"),
   sortSelect: document.querySelector("#sort-select"),
@@ -293,7 +292,7 @@ function renderList() {
   ghost.innerHTML = `<div class="card-title card--ghost-label">+ add ${listType}</div>`;
   // When list is empty, ghost acts as first child; otherwise it adds a sibling
   ghost.addEventListener("click", () => {
-    openComposer();
+    els.composerInput.focus();
   });
   ghostWrap.appendChild(ghost);
   els.list.appendChild(ghostWrap);
@@ -541,16 +540,9 @@ function composerPlaceholder() {
     : "New goal…";
 }
 
-function openComposer() {
-  els.composer.classList.remove("composer--collapsed");
-  els.composer.classList.add("composer--open");
-  els.composerInput.focus();
-}
-
 function closeComposer() {
-  els.composer.classList.add("composer--collapsed");
-  els.composer.classList.remove("composer--open");
   els.composerInput.value = "";
+  els.composerInput.blur();
   composerPlaceholder();
 }
 
@@ -904,22 +896,8 @@ els.sortSelect.addEventListener("change", async () => {
   state.sortMode = els.sortSelect.value;
   await persistAndRender();
 });
-els.composerFab.addEventListener("click", () => openComposer());
-
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && els.composer.classList.contains("composer--open")) {
-    closeComposer();
-  }
-});
-
-document.addEventListener("pointerdown", (e) => {
-  if (
-    els.composer.classList.contains("composer--open") &&
-    !els.composer.contains(e.target) &&
-    e.target !== els.composerFab
-  ) {
-    closeComposer();
-  }
+  if (e.key === "Escape") closeComposer();
 });
 
 
