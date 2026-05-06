@@ -732,6 +732,10 @@ function renderToggles() {
 }
 
 function composerPlaceholder() {
+  if (state.route === "next") {
+    els.composerInput.placeholder = "Add a goal... (due dates work here too)";
+    return;
+  }
   const focus = nodeById(currentFocusId());
   els.composerInput.placeholder = focus
     ? `New ${childType(focus.type)}…`
